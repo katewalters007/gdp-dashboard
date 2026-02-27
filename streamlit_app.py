@@ -3,6 +3,7 @@ import pandas as pd
 import yfinance as yf
 from datetime import datetime, timedelta
 import requests
+import feedparser
 
 # Set the title and favicon that appear in the Browser's tab bar.
 st.set_page_config(
@@ -38,27 +39,68 @@ def get_stock_info(ticker):
 
 @st.cache_data(ttl='5m')
 def get_stock_news(ticker):
-    """Fetch news articles for a stock ticker from yfinance."""
+    """Fetch news articles for a stock ticker from multiple sources."""
+    formatted_news = []
+    
+    # Try yfinance first
     try:
         stock = yf.Ticker(ticker)
         news = stock.news
         
-        if not news:
-            return []
-        
-        formatted_news = []
-        for article in news:
-            # Handle different possible structures from yfinance
-            formatted_article = {
-                'title': article.get('title') or article.get('headline') or 'Untitled',
-                'link': article.get('link') or article.get('url') or '#',
-                'source': article.get('source') or article.get('publisher') or 'Financial News'
-            }
-            formatted_news.append(formatted_article)
-        
-        return formatted_news if formatted_news else []
+        if news:
+            for article in news:
+                formatted_article = {
+                    'title': article.get('title') or article.get('headline') or None,
+                    'link': article.get('link') or article.get('url'),
+                    'source': article.get('source') or article.get('publisher') or 'Financial News'
+                }
+                # Only add if we have a title and link
+                if formatted_article.get('title') and formatted_article.get('link'):
+                    formatted_news.append(formatted_article)
     except Exception as e:
-        return []
+        pass
+    
+    # If yfinance didn't return good results, try Yahoo Finance RSS
+    if len(formatted_news) < 3:
+        try:
+            rss_url = f'https://feeds.finance.yahoo.com/rss/2.0/headline?s={ticker}'
+            feed = feedparser.parse(rss_url)
+            
+            for entry in feed.entries[:5]:
+                formatted_article = {
+                    'title': entry.get('title', 'Market Update'),
+                    'link': entry.get('link', '#'),
+                    'source': 'Yahoo Finance'
+                }
+                if formatted_article['title'] and formatted_article['link'] != '#':
+                    formatted_news.append(formatted_article)
+                
+                if len(formatted_news) >= 5:
+                    break
+        except Exception as e:
+            pass
+    
+    # Fallback: if still no news, provide general market news
+    if len(formatted_news) == 0:
+        try:
+            general_rss = 'https://feeds.finance.yahoo.com/rss/2.0/headline'
+            feed = feedparser.parse(general_rss)
+            
+            for entry in feed.entries[:5]:
+                formatted_article = {
+                    'title': entry.get('title', 'Market Update'),
+                    'link': entry.get('link', '#'),
+                    'source': 'Financial News'
+                }
+                if formatted_article['title']:
+                    formatted_news.append(formatted_article)
+                
+                if len(formatted_news) >= 5:
+                    break
+        except Exception as e:
+            pass
+    
+    return formatted_news if formatted_news else []
 
 # -----------------------------------------------------------------------------
 # Draw the actual page
