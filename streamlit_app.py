@@ -35,7 +35,7 @@ def get_stock_info(ticker):
     except Exception as e:
         return None
 
-@st.cache_data(ttl='1h')
+@st.cache_data(ttl='5m')
 def get_stock_news(ticker):
     """Fetch news articles for a stock ticker."""
     try:
@@ -185,7 +185,13 @@ with tab1:
         st.error('Could not fetch data for any of the selected tickers. Please check the ticker symbols.')
 
 with tab2:
-    st.header('Latest Stock News', divider='gray')
+    col1, col2 = st.columns([0.85, 0.15])
+    with col1:
+        st.header('Latest Stock News', divider='gray')
+    with col2:
+        if st.button('🔄 Refresh', key='refresh_news'):
+            st.cache_data.clear()
+            st.rerun()
     
     if not selected_tickers:
         st.info('Enter stock tickers in the main section to see related news articles.')
@@ -200,6 +206,9 @@ with tab2:
                     all_news[ticker] = news[:5]  # Get top 5 articles per ticker
         
         if all_news:
+            st.success(f'✅ News updated - Showing latest articles for {", ".join(all_news.keys())}')
+            ''
+            
             for ticker, articles in all_news.items():
                 st.subheader(f'📰 {ticker}')
                 
