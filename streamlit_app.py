@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import yfinance as yf
 from datetime import datetime, timedelta
+import requests
 
 # Set the title and favicon that appear in the Browser's tab bar.
 st.set_page_config(
@@ -37,11 +38,25 @@ def get_stock_info(ticker):
 
 @st.cache_data(ttl='5m')
 def get_stock_news(ticker):
-    """Fetch news articles for a stock ticker."""
+    """Fetch news articles for a stock ticker from yfinance."""
     try:
         stock = yf.Ticker(ticker)
         news = stock.news
-        return news if news else []
+        
+        if not news:
+            return []
+        
+        formatted_news = []
+        for article in news:
+            # Handle different possible structures from yfinance
+            formatted_article = {
+                'title': article.get('title') or article.get('headline') or 'Untitled',
+                'link': article.get('link') or article.get('url') or '#',
+                'source': article.get('source') or article.get('publisher') or 'Financial News'
+            }
+            formatted_news.append(formatted_article)
+        
+        return formatted_news if formatted_news else []
     except Exception as e:
         return []
 
@@ -212,18 +227,26 @@ with tab2:
             for ticker, articles in all_news.items():
                 st.subheader(f'📰 {ticker}')
                 
-                for article in articles:
-                    # Create a card-like display for each article
-                    title = article.get('title', 'No title')
-                    link = article.get('link', '#')
-                    source = article.get('source', 'Unknown Source')
-                    
-                    # Display article with link
-                    col1, col2 = st.columns([0.85, 0.15])
-                    with col1:
-                        st.markdown(f"**[{title}]({link})**")
-                        st.caption(f"📌 {source}")
-                    
-                    st.divider()
+                if not articles or len(articles) == 0:
+                    st.info(f'No recent articles found for {ticker}. Try refreshing again soon!')
+                else:
+                    for i, article in enumerate(articles):
+                        # Extract article data with proper defaults
+                        title = article.get('title', '').strip() if isinstance(article.get('title'), str) else 'Untitled Article'
+                        link = article.get('link', '').strip() if isinstance(article.get('link'), str) else '#'
+                        source = article.get('source', 'Financial News').strip() if isinstance(article.get('source'), str) else 'Financial News'
+                        
+                        # Skip if title is completely empty
+                        if not title or title == 'Untitled Article':
+                            title = f'Article {i+1} from {source}'
+                        
+                        # Create a clickable article box
+                        if link and link != '#':
+                            st.markdown(f"**[{title}]({link})**")
+                        else:
+                            st.markdown(f"**{title}**")
+                        
+                        st.caption(f"📌 Source: {source}")
+                        st.divider()
         else:
-            st.warning('No news articles found for the selected tickers.')
+            st.warning('No news articles found for the selected tickers. Try clicking Refresh or check back later.')
