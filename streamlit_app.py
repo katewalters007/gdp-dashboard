@@ -103,6 +103,38 @@ ticker_input = st.text_input(
     placeholder='e.g., AAPL, GOOGL, MSFT'
 )
 
+# Suggested well-performing stocks
+st.caption('💡 Suggested well-performing stocks:')
+col_sugg1, col_sugg2, col_sugg3, col_sugg4, col_sugg5 = st.columns(5)
+
+suggested_tickers = {
+    'AAPL': 'Apple',
+    'MSFT': 'Microsoft', 
+    'NVDA': 'Nvidia',
+    'TSLA': 'Tesla',
+    'GOOGL': 'Google'
+}
+
+with col_sugg1:
+    if st.button('AAPL', key='sugg_aapl', use_container_width=True):
+        ticker_input = 'AAPL'
+
+with col_sugg2:
+    if st.button('MSFT', key='sugg_msft', use_container_width=True):
+        ticker_input = 'MSFT'
+
+with col_sugg3:
+    if st.button('NVDA', key='sugg_nvda', use_container_width=True):
+        ticker_input = 'NVDA'
+
+with col_sugg4:
+    if st.button('TSLA', key='sugg_tsla', use_container_width=True):
+        ticker_input = 'TSLA'
+
+with col_sugg5:
+    if st.button('GOOGL', key='sugg_googl', use_container_width=True):
+        ticker_input = 'GOOGL'
+
 if ticker_input:
     selected_tickers = [t.strip().upper() for t in ticker_input.split(',')]
     selected_tickers = [t for t in selected_tickers if t]  # Remove empty strings
