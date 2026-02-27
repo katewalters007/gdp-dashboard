@@ -1,8 +1,14 @@
-# :earth_americas: GDP dashboard template
+# :chart_with_upwards_trend: Stock Tracker
 
-A simple Streamlit app showing the GDP of different countries in the world.
+A simple Streamlit app for tracking historical and current stock prices. Enter any stock ticker symbols to view price charts and performance metrics.
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://gdp-dashboard-template.streamlit.app/)
+### Features
+
+- **Real-time Stock Data**: Fetch current and historical stock prices using yfinance
+- **Interactive Charts**: Visualize stock price trends over your chosen time period
+- **Multiple Tickers**: Track multiple stocks simultaneously for easy comparison
+- **Performance Metrics**: View current prices, price changes, highs, lows, and averages
+- **Customizable Date Range**: Select any date range to analyze stock performance
 
 ### How to run it on your own machine
 
@@ -17,3 +23,5 @@ A simple Streamlit app showing the GDP of different countries in the world.
    ```
    $ streamlit run streamlit_app.py
    ```
+
+3. Enter stock tickers (e.g., AAPL, GOOGL, MSFT) and adjust the date range to explore stock data
