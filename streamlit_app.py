@@ -1,10 +1,21 @@
 import streamlit as st
 import pandas as pd
 import yfinance as yf
-import feedparser
 from datetime import datetime, timedelta
-
-from stock_analysis import build_analysis_snapshot, get_stock_data, get_suggested_stocks, normalize_tickers
+import requests
+import feedparser
+from analytics_utils import TAX_RATES, build_profit_analytics
+from user_backend import (
+    init_db,
+    save_watchlist,
+    get_watchlist,
+    get_watchlist_entries,
+    update_watchlist_entry,
+    add_transaction,
+    get_transactions,
+    update_transaction,
+    delete_transaction,
+)
 
 # Set the title and favicon that appear in the Browser's tab bar.
 st.set_page_config(
@@ -476,6 +487,20 @@ st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
 if 'selected_tickers_list' not in st.session_state:
     st.session_state.selected_tickers_list = ['AAPL', 'GOOGL', 'MSFT']
 
+current_user = st.session_state.auth_user
+if current_user and st.session_state.watchlist_loaded_for != current_user['id']:
+    saved_watchlist = get_watchlist(current_user['id'])
+    if saved_watchlist:
+        st.session_state.selected_tickers_list = saved_watchlist
+    st.session_state.watchlist_loaded_for = current_user['id']
+
+watchlist_entries_map = {}
+if current_user:
+    watchlist_entries_map = {
+        entry['ticker']: entry
+        for entry in get_watchlist_entries(current_user['id'])
+    }
+
 ticker_input = st.text_input(
     'Enter stock tickers (comma-separated)',
     value=', '.join(st.session_state.selected_tickers_list),
@@ -504,8 +529,12 @@ else:
 if not len(selected_tickers):
     st.warning("Enter at least one stock ticker")
 
-# Main content area for Stock Analysis
-st.markdown("<h2 style='font-family: \"Playfair Display\", serif; letter-spacing: 1px; margin-top: 5px; margin-bottom: 10px;'>Stock Analysis</h2>", unsafe_allow_html=True)
+# Main content tabs
+stock_tab, watchlist_tab, transaction_tab = st.tabs([
+    'Stock Statistics',
+    'Watchlist Notes & Alerts',
+    'Transaction Tracker',
+])
 
 # Fetch and combine data for all selected tickers
 combined_data = pd.DataFrame()
@@ -542,15 +571,198 @@ if not combined_data.empty:
             if ticker in ticker_data:
                 stock_data = ticker_data[ticker]
                 current_price = stock_data['Close'].iloc[-1].item()
-                previous_price = stock_data['Close'].iloc[0].item()
-                price_change = current_price - previous_price
-                percent_change = (price_change / previous_price) * 100
-                
-                st.metric(
-                    label=ticker,
-                    value=f'${current_price:.2f}',
-                    delta=f'{percent_change:.2f}%',
-                    delta_color='normal' if price_change >= 0 else 'inverse'
+                high = stock_data['High'].max().item()
+                low = stock_data['Low'].min().item()
+                avg = stock_data['Close'].mean().item()
+
+                stats_data.append({
+                    'Ticker': ticker,
+                    'Current Price': f'${current_price:.2f}',
+                    '52-Week High': f'${high:.2f}',
+                    '52-Week Low': f'${low:.2f}',
+                    'Average Price': f'${avg:.2f}'
+                })
+
+        if stats_data:
+            stats_df = pd.DataFrame(stats_data)
+            st.dataframe(stats_df, width='stretch')
+
+        if current_user:
+            triggered_alerts = []
+            for ticker in selected_tickers:
+                entry = watchlist_entries_map.get(ticker, {})
+                if ticker not in ticker_data:
+                    continue
+
+                current_price = float(ticker_data[ticker]['Close'].iloc[-1].item())
+                buy_alert = entry.get('buy_alert_price')
+                sell_alert = entry.get('sell_alert_price')
+
+                if buy_alert is not None and current_price <= float(buy_alert):
+                    triggered_alerts.append(
+                        f"{ticker}: current price ${current_price:.2f} is at or below buy alert ${float(buy_alert):.2f}"
+                    )
+                if sell_alert is not None and current_price >= float(sell_alert):
+                    triggered_alerts.append(
+                        f"{ticker}: current price ${current_price:.2f} is at or above sell alert ${float(sell_alert):.2f}"
+                    )
+
+            if triggered_alerts:
+                st.subheader('Triggered Alerts')
+                for alert_message in triggered_alerts:
+                    st.warning(alert_message)
+
+with watchlist_tab:
+    st.subheader('Watchlist Notes & Alerts')
+
+    if not current_user:
+        st.info('Log in to save per-ticker notes and price alerts.')
+    elif not selected_tickers:
+        st.info('Add tickers to your watchlist to manage notes and alerts.')
+    else:
+        st.caption('Set a note plus optional buy and sell alert prices for each saved ticker.')
+
+        for ticker in selected_tickers:
+            entry = watchlist_entries_map.get(ticker, {})
+            default_note = entry.get('note', '')
+            default_buy = entry.get('buy_alert_price')
+            default_sell = entry.get('sell_alert_price')
+            current_price = None
+            alert_state = 'No alerts configured.'
+
+            if ticker in ticker_data:
+                current_price = float(ticker_data[ticker]['Close'].iloc[-1].item())
+                alert_messages = []
+                if default_buy is not None and current_price <= float(default_buy):
+                    alert_messages.append(f'Buy alert triggered at ${current_price:.2f}')
+                if default_sell is not None and current_price >= float(default_sell):
+                    alert_messages.append(f'Sell alert triggered at ${current_price:.2f}')
+                if alert_messages:
+                    alert_state = ' | '.join(alert_messages)
+
+            with st.expander(f'{ticker} settings', expanded=False):
+                info_col1, info_col2 = st.columns(2)
+                with info_col1:
+                    if current_price is not None:
+                        st.metric('Current Price', f'${current_price:.2f}')
+                    else:
+                        st.caption('Current price unavailable for this ticker.')
+                with info_col2:
+                    if 'triggered' in alert_state.lower():
+                        st.warning(alert_state)
+                    else:
+                        st.info(alert_state)
+
+                with st.form(f'watchlist_entry_form_{ticker}'):
+                    note_value = st.text_area(
+                        'Watchlist note',
+                        value=default_note,
+                        placeholder='Why are you watching this stock?',
+                        key=f'note_{ticker}',
+                    )
+
+                    alert_col1, alert_col2 = st.columns(2)
+                    with alert_col1:
+                        enable_buy_alert = st.checkbox(
+                            'Enable buy alert',
+                            value=default_buy is not None,
+                            key=f'enable_buy_{ticker}',
+                        )
+                        buy_alert_value = st.number_input(
+                            'Buy alert price',
+                            min_value=0.0,
+                            value=float(default_buy) if default_buy is not None else 0.0,
+                            step=0.01,
+                            key=f'buy_alert_{ticker}',
+                        )
+                    with alert_col2:
+                        enable_sell_alert = st.checkbox(
+                            'Enable sell alert',
+                            value=default_sell is not None,
+                            key=f'enable_sell_{ticker}',
+                        )
+                        sell_alert_value = st.number_input(
+                            'Sell alert price',
+                            min_value=0.0,
+                            value=float(default_sell) if default_sell is not None else 0.0,
+                            step=0.01,
+                            key=f'sell_alert_{ticker}',
+                        )
+
+                    save_watch_settings = st.form_submit_button('Save Note & Alerts', width='stretch')
+
+                if save_watch_settings:
+                    buy_alert_to_store = buy_alert_value if enable_buy_alert and buy_alert_value > 0 else None
+                    sell_alert_to_store = sell_alert_value if enable_sell_alert and sell_alert_value > 0 else None
+
+                    update_watchlist_entry(
+                        current_user['id'],
+                        ticker,
+                        note_value,
+                        buy_alert_to_store,
+                        sell_alert_to_store,
+                    )
+                    st.success(f'Saved note and alerts for {ticker}.')
+                    st.rerun()
+
+        watchlist_summary_rows = []
+        refreshed_entries = {
+            entry['ticker']: entry
+            for entry in get_watchlist_entries(current_user['id'])
+        }
+        for ticker in selected_tickers:
+            entry = refreshed_entries.get(ticker, {})
+            current_price = None
+            if ticker in ticker_data:
+                current_price = float(ticker_data[ticker]['Close'].iloc[-1].item())
+
+            status = 'Monitoring'
+            buy_alert = entry.get('buy_alert_price')
+            sell_alert = entry.get('sell_alert_price')
+            if current_price is not None:
+                if buy_alert is not None and current_price <= float(buy_alert):
+                    status = 'Buy alert triggered'
+                if sell_alert is not None and current_price >= float(sell_alert):
+                    status = 'Sell alert triggered'
+
+            watchlist_summary_rows.append(
+                {
+                    'Ticker': ticker,
+                    'Current Price': f'${current_price:.2f}' if current_price is not None else 'N/A',
+                    'Buy Alert': f"${float(buy_alert):.2f}" if buy_alert is not None else 'Not set',
+                    'Sell Alert': f"${float(sell_alert):.2f}" if sell_alert is not None else 'Not set',
+                    'Note': entry.get('note', ''),
+                    'Status': status,
+                }
+            )
+
+        if watchlist_summary_rows:
+            st.markdown('**Watchlist Alert Summary**')
+            st.dataframe(pd.DataFrame(watchlist_summary_rows), width='stretch', hide_index=True)
+
+with transaction_tab:
+    st.subheader('Transaction Tracker')
+
+    if current_user:
+        with st.form('transaction_form'):
+            tx_col1, tx_col2, tx_col3, tx_col4 = st.columns(4)
+            with tx_col1:
+                trade_date = st.date_input('Trade date', value=datetime.now().date(), key='trade_date')
+                ticker_tx = st.text_input('Ticker', placeholder='AAPL', key='ticker_tx').strip().upper()
+            with tx_col2:
+                action = st.selectbox('Action', ['BUY', 'SELL'], key='action_tx')
+                quantity = st.number_input('Quantity', min_value=0.0, step=1.0, key='quantity_tx')
+            with tx_col3:
+                price = st.number_input('Price', min_value=0.0, step=0.01, key='price_tx')
+                tax_area_tx = st.selectbox('Tax area', list(TAX_RATES.keys()), key='tax_area_tx')
+            with tx_col4:
+                tax_rate_tx = st.number_input(
+                    'Tax rate (%)',
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=float(TAX_RATES[tax_area_tx] * 100),
+                    step=0.1,
+                    key='tax_rate_tx',
                 )
             else:
                 st.warning(f'Could not fetch data for {ticker}')
