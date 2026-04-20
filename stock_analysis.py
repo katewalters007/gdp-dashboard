@@ -65,7 +65,13 @@ def build_analysis_summary(ticker_data):
         average_price = close_prices.mean().item()
         percent_change = ((current_price - start_price) / start_price) * 100 if start_price else 0.0
         daily_returns = close_prices.pct_change().dropna()
-        annualized_volatility = float(daily_returns.std() * (252 ** 0.5) * 100) if not daily_returns.empty else 0.0
+        if isinstance(daily_returns, pd.DataFrame):
+            daily_returns = daily_returns.iloc[:, 0]
+        daily_returns = pd.to_numeric(daily_returns, errors='coerce').dropna()
+        volatility = daily_returns.std() if not daily_returns.empty else 0.0
+        if isinstance(volatility, pd.Series):
+            volatility = volatility.iloc[0] if not volatility.empty else 0.0
+        annualized_volatility = float(volatility) * (252 ** 0.5) * 100 if volatility else 0.0
         drawdown_pct = ((current_price - high_price) / high_price) * 100 if high_price else 0.0
         trend_vs_average = ((current_price - average_price) / average_price) * 100 if average_price else 0.0
 

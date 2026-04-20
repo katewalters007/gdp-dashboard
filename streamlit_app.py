@@ -528,7 +528,7 @@ analysis_summary = st.session_state.analysis_snapshot['stocks']
 if not combined_data.empty:
     # Display historical price chart
     st.subheader('Stock Price Over Time')
-    st.line_chart(combined_data, use_container_width=True)
+    st.line_chart(combined_data, width='stretch')
     
     # Display current metrics
     st.subheader('Current Stock Data')

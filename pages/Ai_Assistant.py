@@ -736,7 +736,7 @@ try:
     if snapshot.get('stocks'):
         normalized_chart = build_normalized_chart_data(snapshot)
         if not normalized_chart.empty:
-            st.line_chart(normalized_chart, use_container_width=True)
+            st.line_chart(normalized_chart, width='stretch')
         else:
             st.info('Not enough price history to draw the normalized comparison chart.')
     else:
