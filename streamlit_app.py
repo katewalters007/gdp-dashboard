@@ -1,8 +1,10 @@
 import streamlit as st
 import pandas as pd
 import yfinance as yf
+import feedparser
 from datetime import datetime, timedelta
-import requests
+
+from stock_analysis import build_analysis_snapshot, get_stock_data, get_suggested_stocks, normalize_tickers
 
 # Set the title and favicon that appear in the Browser's tab bar.
 st.set_page_config(
@@ -32,6 +34,7 @@ st.markdown("""
             --blue-wash: #EBF3F7;
             --brown-wash: #F4EDE3;
             --grey-wash: #F0F3F4;
+            --beige-text: #2F241A;
         }
         
         /* Main styling */
@@ -59,6 +62,14 @@ st.markdown("""
             padding-bottom: 12px;
             margin-bottom: 20px;
             text-shadow: 1px 1px 2px rgba(0,0,0,0.05);
+        }
+
+        .page-title {
+            color: var(--forest-green) !important;
+        }
+
+        .page-subtitle {
+            color: #5E666B !important;
         }
         
         h2 {
@@ -209,7 +220,7 @@ st.markdown("""
         
         /* Subheader styling */
         .stMarkdownContainer h3 {
-            color: var(--earth-brown) !important;
+            color: var(--beige-text) !important;
             border-left: 5px solid var(--light-brown);
             padding-left: 12px;
             background-color: rgba(244, 237, 227, 0.3);
@@ -261,61 +272,106 @@ st.markdown("""
         .stMarkdown {
             margin: 2px 0 !important;
         }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --dark-surface: #142029;
+                --dark-panel: #1E2D38;
+                --dark-panel-alt: #243845;
+                --dark-border: #456173;
+                --dark-text: #F3F1EC;
+                --dark-muted: #D7E0E3;
+            }
+
+            body,
+            .stApp,
+            [data-testid="stAppViewContainer"],
+            [data-testid="stHeader"] {
+                background: linear-gradient(180deg, #0F1A22 0%, #162631 100%) !important;
+                color: var(--dark-text) !important;
+            }
+
+            p,
+            label,
+            span,
+            div,
+            li,
+            small,
+            .stMarkdown,
+            .stMarkdownContainer,
+            [data-testid="stMetricLabel"],
+            [data-testid="stMetricValue"],
+            [data-testid="stMetricDelta"],
+            [data-testid="stSidebar"] * {
+                color: var(--dark-text) !important;
+            }
+
+            h1,
+            h2,
+            h3,
+            h4,
+            h5,
+            h6 {
+                color: #F4E7CE !important;
+            }
+
+            .page-title {
+                color: #F3F1EC !important;
+            }
+
+            .page-subtitle {
+                color: #D7E0E3 !important;
+            }
+
+            .stMarkdownContainer h3,
+            .stMarkdownContainer h3 *,
+            [data-testid="stAlert"] > div:nth-child(2),
+            [data-testid="stAlert"] > div:nth-child(2) * {
+                color: var(--beige-text) !important;
+            }
+
+            .main,
+            [data-testid="stVerticalBlock"] > div {
+                background: linear-gradient(180deg, rgba(20, 32, 41, 0.96) 0%, rgba(30, 45, 56, 0.96) 100%) !important;
+            }
+
+            [data-testid="stSidebar"] {
+                background: #000000 !important;
+            }
+
+            [data-testid="metric-container"],
+            [data-testid="dataFrame"],
+            .stPlotlyContainer,
+            .stAlert {
+                background: linear-gradient(135deg, rgba(30, 45, 56, 0.92) 0%, rgba(36, 56, 69, 0.92) 100%) !important;
+                border-color: var(--dark-border) !important;
+                color: var(--dark-text) !important;
+            }
+
+            input,
+            textarea,
+            [data-testid="stDateInput"],
+            [data-baseweb="input"] input {
+                background-color: var(--dark-panel) !important;
+                color: var(--dark-text) !important;
+                border-color: var(--dark-border) !important;
+            }
+
+            .caption,
+            [data-testid="stCaptionContainer"] {
+                color: var(--dark-muted) !important;
+            }
+
+            a,
+            [data-testid="stSidebar"] a {
+                color: #9FD3E6 !important;
+            }
+        }
     </style>
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
 # Declare some useful functions.
-
-@st.cache_data(ttl='1h')
-def get_stock_data(ticker, start_date, end_date):
-    """Fetch stock data from yfinance.
-
-    This uses caching with a 1-hour TTL to avoid excessive API calls.
-    """
-    try:
-        stock_data = yf.download(ticker, start=start_date, end=end_date, progress=False)
-        if stock_data.empty:
-            return None
-        return stock_data
-    except Exception as e:
-        return None
-
-@st.cache_data(ttl='1h')
-def get_top_performers(tickers_list, lookback_days=365):
-    """Find best performing stocks from a list based on price change."""
-    performers = {}
-    
-    try:
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=lookback_days)
-        
-        for ticker in tickers_list:
-            try:
-                stock_data = yf.download(ticker, start=start_date, end=end_date, progress=False)
-                if not stock_data.empty:
-                    start_price = stock_data['Close'].iloc[0].item()
-                    end_price = stock_data['Close'].iloc[-1].item()
-                    percent_change = ((end_price - start_price) / start_price) * 100
-                    performers[ticker] = float(percent_change)
-            except:
-                continue
-    except:
-        pass
-    
-    # Return top 5 performers sorted by return
-    if performers:
-        sorted_performers = sorted(performers.items(), key=lambda x: x[1], reverse=True)
-        return [ticker for ticker, _ in sorted_performers[:5]]
-    
-    # Fallback to default if no data available
-    return ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'GOOGL']
-
-@st.cache_data(ttl='1h')
-def get_suggested_stocks():
-    """Get list of well-performing tech and finance stocks."""
-    default_stocks = ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'GOOGL', 'AMZN', 'NFLX', 'SPY', 'QQQ']
-    return get_top_performers(default_stocks)
 
 @st.cache_data(ttl='5m')
 def get_stock_news(ticker):
@@ -385,8 +441,8 @@ def get_stock_news(ticker):
 
 # Set the title that appears at the top of the page.
 st.markdown("""
-    <h1 style='font-family: "Playfair Display", serif; text-align: center; letter-spacing: 2px; font-size: 56px;'>Stock Tracker</h1>
-    <p style='text-align: center; color: gray; font-size: 14px;'>Track historical and current stock data. Enter your favorite stock tickers and explore their performance over time.</p>
+    <h1 class='page-title' style='font-family: "Playfair Display", serif; text-align: center; letter-spacing: 2px; font-size: 56px;'>Stock Tracker</h1>
+    <p class='page-subtitle' style='text-align: center; font-size: 14px;'>Track historical and current stock data. Enter your favorite stock tickers and explore their performance over time.</p>
 """, unsafe_allow_html=True)
 st.divider()
 
@@ -440,8 +496,7 @@ for i, ticker in enumerate(suggested_stocks[:5]):
             st.rerun()
 
 if ticker_input:
-    selected_tickers = [t.strip().upper() for t in ticker_input.split(',')]
-    selected_tickers = [t for t in selected_tickers if t]  # Remove empty strings
+    selected_tickers = normalize_tickers(ticker_input)
     st.session_state.selected_tickers_list = selected_tickers
 else:
     selected_tickers = []
@@ -466,6 +521,9 @@ for ticker in selected_tickers:
             combined_data = stock_data_copy
         else:
             combined_data = combined_data.join(stock_data_copy)
+
+st.session_state.analysis_snapshot = build_analysis_snapshot(ticker_data, start_date, end_date, selected_tickers)
+analysis_summary = st.session_state.analysis_snapshot['stocks']
 
 if not combined_data.empty:
     # Display historical price chart
@@ -496,30 +554,41 @@ if not combined_data.empty:
                 )
             else:
                 st.warning(f'Could not fetch data for {ticker}')
+
+    if analysis_summary:
+        top_pick = analysis_summary[0]
+        st.subheader('AI Snapshot')
+        st.success(
+            f"Based on recent return, volatility, and drawdown, {top_pick['ticker']} ranks highest in the current selection. "
+            f"Open the AI Assistant page for a deeper explanation."
+        )
     
     # Display detailed statistics
     st.subheader('Performance Statistics')
     stats_data = []
-    for ticker in selected_tickers:
-        if ticker in ticker_data:
-            stock_data = ticker_data[ticker]
-            current_price = stock_data['Close'].iloc[-1].item()
-            high = stock_data['High'].max().item()
-            low = stock_data['Low'].min().item()
-            avg = stock_data['Close'].mean().item()
-            
-            stats_data.append({
-                'Ticker': ticker,
-                'Current Price': f'${current_price:.2f}',
-                '52-Week High': f'${high:.2f}',
-                '52-Week Low': f'${low:.2f}',
-                'Average Price': f'${avg:.2f}'
-            })
+    for item in analysis_summary:
+        stats_data.append({
+            'Ticker': item['ticker'],
+            'Current Price': f"${item['current_price']:.2f}",
+            'Period Return': f"{item['percent_change']:.2f}%",
+            'Annualized Volatility': f"{item['volatility_pct']:.2f}%",
+            'Drawdown From High': f"{item['drawdown_pct']:.2f}%",
+            'Average Price': f"${item['average_price']:.2f}",
+            'AI Score': f"{item['score']:.2f}",
+        })
     
     if stats_data:
         stats_df = pd.DataFrame(stats_data)
         st.dataframe(stats_df, width='stretch')
 else:
+    st.session_state.analysis_snapshot = {
+        'generated_at': datetime.now().isoformat(),
+        'start_date': str(start_date),
+        'end_date': str(end_date),
+        'selected_tickers': selected_tickers,
+        'stocks': [],
+        'top_pick': None,
+    }
     st.error('Could not fetch data for any of the selected tickers. Please check the ticker symbols.')
 
 # Sidebar for Latest Stock News
