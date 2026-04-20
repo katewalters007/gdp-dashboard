@@ -1,20 +1,28 @@
+import os
+
 import streamlit as st
 
-from auth_utils import authenticate_user, is_valid_email
-
-st.set_page_config(
-    page_title="Login",
-    page_icon="🔑",
-    layout="centered",
+from auth_utils import (
+    authenticate_user,
+    create_user,
+    generate_and_store_temporary_password,
+    is_valid_email,
+    reset_password_with_temporary,
+    send_password_changed_notification,
+    send_temporary_password_email,
 )
 
-# Add custom CSS for consistent styling across all pages
-st.markdown("""
+st.set_page_config(
+    page_title='Account Access',
+    page_icon='🔑',
+    layout='wide',
+)
+
+st.markdown(r"""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&display=swap');
         @import url('https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@400;600;700&display=swap');
-        
-        /* Forest Color Palette */
+
         :root {
             --forest-green: #1B4332;
             --deep-green: #2D6A4F;
@@ -31,26 +39,23 @@ st.markdown("""
             --grey-wash: #F0F3F4;
             --beige-text: #2F241A;
         }
-        
-        /* Main styling */
+
         body {
             background: linear-gradient(135deg, #F5F3F0 0%, #EBF3F7 100%);
             color: var(--dark-grey);
         }
-        
-        /* Main Headers - Playfair Display */
+
         h1, h2 {
             font-family: 'Playfair Display', serif !important;
             letter-spacing: 1.5px;
         }
-        
-        /* Subheaders - Josefin Sans */
+
         h3, h4, h5, h6 {
             font-family: 'Josefin Sans', sans-serif !important;
             font-weight: 700 !important;
             letter-spacing: 0.8px;
         }
-        
+
         h1 {
             color: var(--forest-green) !important;
             border-bottom: 4px solid var(--earth-brown);
@@ -58,27 +63,7 @@ st.markdown("""
             margin-bottom: 20px;
             text-shadow: 1px 1px 2px rgba(0,0,0,0.05);
         }
-        
-        h2 {
-            color: var(--deep-green) !important;
-            border-left: 5px solid var(--forest-blue);
-            padding-left: 12px;
-        }
-        
-        h3 {
-            color: var(--earth-brown) !important;
-        }
-        
-        /* Streamlit containers */
-        .main {
-            background: linear-gradient(180deg, #F5F3F0 0%, #EBF3F7 100%);
-        }
-        
-        [data-testid="stSidebar"] {
-            background: linear-gradient(180deg, #F4EDE3 0%, #F0F3F4 100%);
-        }
-        
-        /* Button styling */
+
         .stButton > button {
             background: linear-gradient(135deg, var(--deep-green) 0%, var(--forest-green) 100%) !important;
             color: white !important;
@@ -88,71 +73,64 @@ st.markdown("""
             transition: all 0.3s ease !important;
             box-shadow: 0 4px 12px rgba(27, 67, 50, 0.15) !important;
         }
-        
+
         .stButton > button:hover {
             background: linear-gradient(135deg, var(--forest-green) 0%, var(--deep-green) 100%) !important;
             box-shadow: 0 6px 20px rgba(27, 67, 50, 0.3) !important;
             transform: translateY(-2px) !important;
         }
-        
-        /* Input fields */
+
         input, textarea, [data-testid="stDateInput"] {
             border: 2px solid var(--light-grey) !important;
             border-radius: 6px !important;
             background-color: white !important;
         }
-        
+
         input:focus, textarea:focus {
             border-color: var(--forest-blue) !important;
             box-shadow: 0 0 0 3px rgba(74, 144, 164, 0.15) !important;
         }
-        
-        /* Dividers */
+
         hr {
             background: linear-gradient(90deg, var(--earth-brown) 0%, transparent 50%, var(--forest-blue) 100%) !important;
             height: 2px !important;
             opacity: 0.6;
         }
-        
-        /* Links */
+
         a {
             color: var(--forest-blue) !important;
             text-decoration: none !important;
             font-weight: 500 !important;
             transition: all 0.2s ease !important;
         }
-        
+
         a:hover {
             color: var(--earth-brown) !important;
             text-decoration: underline !important;
         }
-        
-        /* Alert boxes */
+
         .stAlert {
             border-radius: 8px !important;
             border-left: 6px solid var(--forest-blue) !important;
             background: linear-gradient(90deg, rgba(74, 144, 164, 0.1) 0%, rgba(74, 144, 164, 0.05) 100%) !important;
         }
-        
+
         .stAlert > div {
             color: var(--dark-grey) !important;
         }
-        
-        /* Sidebar specific styling */
-        [data-testid="stSidebar"] h2 {
-            color: var(--forest-green) !important;
-            border-bottom: 3px solid var(--earth-brown);
-            padding-bottom: 10px;
-            margin-bottom: 15px;
-        }
-        
-        [data-testid="stSidebar"] a {
-            color: var(--forest-blue) !important;
-        }
-        
-        /* Text styling */
+
         .caption {
             color: var(--sage-grey) !important;
+        }
+
+        /* Tab styling */
+        [data-testid="stTabs"] button {
+            color: var(--dark-grey) !important;
+        }
+
+        [data-testid="stTabs"] button:hover {
+            color: var(--forest-green) !important;
+            border-bottom-color: var(--forest-blue) !important;
         }
 
         @media (prefers-color-scheme: dark) {
@@ -197,31 +175,151 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("Login")
 
-if st.session_state.pop("password_changed_notice", False):
-    st.success("Your password was changed successfully. Please log in with your new password.")
+def _get_smtp_config() -> dict | None:
+    try:
+        s = st.secrets["smtp"]
+        cfg = {
+            "host": s["host"],
+            "port": s.get("port", 587),
+            "username": s["username"],
+            "password": s["password"],
+            "from_address": s.get("from_address") or s["username"],
+            "use_ssl": s.get("use_ssl", False),
+        }
+        if " " in cfg["password"]:
+            cfg["password"] = cfg["password"].replace(" ", "")
+        return cfg
+    except (KeyError, FileNotFoundError):
+        pass
 
-with st.form("login_form"):
-    login_email = st.text_input("Email", key="login_email", placeholder="name@example.com")
-    login_password = st.text_input("Password", type="password", key="login_password")
-    st.page_link("pages/Forgot_Password.py", label="Forgot Password")
-    login_submit = st.form_submit_button("Sign In")
+    host = os.getenv("SMTP_HOST", "").strip()
+    username = os.getenv("SMTP_USERNAME", "").strip()
+    password = os.getenv("SMTP_PASSWORD", "").strip()
+    if not all([host, username, password]):
+        return None
+    if " " in password:
+        password = password.replace(" ", "")
+    return {
+        "host": host,
+        "port": int(os.getenv("SMTP_PORT", "587").strip()),
+        "username": username,
+        "password": password,
+        "from_address": os.getenv("SMTP_FROM", "").strip() or username,
+        "use_ssl": os.getenv("SMTP_USE_SSL", "false").lower() == "true",
+    }
 
-if login_submit:
-    normalized_email = login_email.strip().lower()
+st.title("Account Access")
+st.write("Use the tabs below to sign in, create a new account, or request a temporary password.")
 
-    if not is_valid_email(normalized_email):
-        st.error("Please enter a valid email address.")
-    elif not login_password:
-        st.error("Password is required.")
-    else:
-        success, message = authenticate_user(normalized_email, login_password)
-        if success:
-            st.success(message)
-            st.session_state["authenticated_user_email"] = normalized_email
+tabs = st.tabs(["Sign In", "Create Account", "Forgot Password", "Reset Password"])
+
+with tabs[0]:
+    with st.form("login_form"):
+        login_email = st.text_input("Email", key="login_email", placeholder="name@example.com")
+        login_password = st.text_input("Password", type="password", key="login_password")
+        login_submit = st.form_submit_button("Sign In")
+
+    if login_submit:
+        normalized_email = login_email.strip().lower()
+        if not is_valid_email(normalized_email):
+            st.error("Please enter a valid email address.")
+        elif not login_password:
+            st.error("Password is required.")
         else:
-            st.error(message)
+            success, message = authenticate_user(normalized_email, login_password)
+            if success:
+                st.success(message)
+                st.session_state["authenticated_user_email"] = normalized_email
+            else:
+                st.error(message)
 
-st.divider()
-st.page_link("pages/Create_Account.py", label="Create Account")
+with tabs[1]:
+    with st.form("create_account_form"):
+        signup_email = st.text_input("Email", key="signup_email", placeholder="name@example.com")
+        signup_password = st.text_input("Password", type="password", key="signup_password")
+        signup_confirm_password = st.text_input("Confirm Password", type="password", key="signup_confirm_password")
+        signup_submit = st.form_submit_button("Create Account")
+
+    if signup_submit:
+        normalized_email = signup_email.strip().lower()
+        if not is_valid_email(normalized_email):
+            st.error("Please enter a valid email address.")
+        elif signup_password != signup_confirm_password:
+            st.error("Passwords do not match.")
+        else:
+            success, message = create_user(normalized_email, signup_password)
+            if success:
+                st.success(message)
+                st.info("You can now sign in using your new account in the Sign In tab.")
+            else:
+                st.error(message)
+
+with tabs[2]:
+    st.write("Enter the email used for your account. If it exists, a temporary password will be sent.")
+    with st.form("forgot_password_form"):
+        forgot_email = st.text_input("Account email", key="forgot_email", placeholder="name@example.com")
+        forgot_submit = st.form_submit_button("Send Temporary Password")
+
+    if forgot_submit:
+        normalized_email = forgot_email.strip().lower()
+        if not is_valid_email(normalized_email):
+            st.error("Please enter a valid email address.")
+        else:
+            found, temporary_password = generate_and_store_temporary_password(normalized_email)
+            st.info("If an account exists for that email, a temporary password has been sent.")
+
+            if found and temporary_password:
+                smtp_config = _get_smtp_config()
+                if smtp_config is None:
+                    st.warning(
+                        "⚠️ SMTP is not configured. Fill in the 'smtp' section of `.streamlit/secrets.toml` or set environment variables (SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD)."
+                    )
+                else:
+                    sent, message = send_temporary_password_email(
+                        normalized_email, temporary_password, smtp_config
+                    )
+                    if sent:
+                        st.success("✅ Temporary password sent! Check your email.")
+                    else:
+                        st.error(f"❌ Email delivery failed: {message}")
+
+    st.caption("After receiving your temporary password, return to the Sign In tab and log in with the temporary password.")
+
+with tabs[3]:
+    st.write("Use the temporary password sent to your email, then choose a new password.")
+    with st.form("reset_password_form"):
+        reset_email = st.text_input("Email", key="reset_email", placeholder="name@example.com")
+        reset_temporary_password = st.text_input("Temporary password", type="password", key="reset_temporary_password")
+        reset_new_password = st.text_input("New password", type="password", key="reset_new_password")
+        reset_confirm_password = st.text_input("Confirm new password", type="password", key="reset_confirm_password")
+        reset_submit = st.form_submit_button("Reset Password")
+
+    if reset_submit:
+        normalized_email = reset_email.strip().lower()
+
+        if not is_valid_email(normalized_email):
+            st.error("Please enter a valid email address.")
+        elif not reset_temporary_password:
+            st.error("Temporary password is required.")
+        elif reset_new_password != reset_confirm_password:
+            st.error("New password and confirmation do not match.")
+        else:
+            success, message = reset_password_with_temporary(
+                normalized_email,
+                reset_temporary_password,
+                reset_new_password,
+            )
+            if success:
+                st.success("Your password has been reset successfully.")
+                smtp_config = _get_smtp_config()
+                if smtp_config:
+                    sent, info_message = send_password_changed_notification(normalized_email, smtp_config)
+                    if sent:
+                        st.info(f"A confirmation email has been sent to {normalized_email}.")
+                st.info("Return to the Sign In tab to log in with your new password.")
+            else:
+                st.error(message)
+
+    st.caption("If you need a temporary password, use the Forgot Password tab first.")
+

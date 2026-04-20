@@ -507,65 +507,146 @@ def build_drawdown_response(snapshot):
         return f"Unable to analyze drawdowns: {str(e)}"
 
 
+def get_stock_history(ticker, snapshot):
+    history = snapshot.get('history', {})
+    stock_history = history.get(ticker)
+    if isinstance(stock_history, pd.DataFrame) and 'Close' in stock_history.columns:
+        close_prices = stock_history['Close'].dropna()
+        return close_prices if not close_prices.empty else None
+    return None
+
+
+def compute_period_return(close_prices, lookback_days):
+    if close_prices is None or len(close_prices) <= lookback_days:
+        return None
+    earlier_price = float(close_prices.iloc[-(lookback_days + 1)])
+    latest_price = float(close_prices.iloc[-1])
+    if earlier_price == 0:
+        return None
+    return ((latest_price - earlier_price) / earlier_price) * 100
+
+
+def build_general_response(prompt, snapshot):
+    stocks = snapshot.get('stocks', [])
+    if not stocks:
+        return 'I do not have enough loaded data to answer that yet. Run the advisor first.'
+
+    top = stocks[0]
+    bottom = stocks[-1]
+    tickers = ', '.join(stock['ticker'] for stock in stocks[:8])
+    if len(stocks) > 8:
+        tickers += ', ...'
+
+    return (
+        f"I am answering from the historical snapshot loaded for {len(stocks)} tickers from {snapshot.get('start_date')} to {snapshot.get('end_date')}. "
+        f"The top-ranked name is {top['ticker']} with a score of {top['score']:.2f}, return {format_percent(top['percent_change'])}, and volatility {format_percent(top['volatility_pct'])}. "
+        f"The lowest-ranked name is {bottom['ticker']} with return {format_percent(bottom['percent_change'])}. "
+        f"Currently analyzed tickers include: {tickers}. "
+        "Ask about a specific ticker, comparison, volatility, drawdown, or overall ranking."
+    )
+
+
+def build_stock_response(stock, prompt, snapshot):
+    prompt_lower = prompt.lower()
+    history = get_stock_history(stock['ticker'], snapshot)
+    latest = stock.get('current_price')
+    rank = snapshot['stocks'].index(stock) + 1 if stock in snapshot['stocks'] else None
+    performance = format_percent(stock['percent_change'])
+    volatility = format_percent(stock['volatility_pct'])
+    drawdown = format_percent(stock['drawdown_pct'])
+    average = format_currency(stock['average_price'])
+
+    if 'rank' in prompt_lower or 'score' in prompt_lower:
+        return (
+            f"{stock['ticker']} ranks #{rank} in the current analysis with a score of {stock['score']:.2f}. "
+            f"It has returned {performance} over the selected period."
+        )
+
+    if any(keyword in prompt_lower for keyword in ['current price', 'price', 'last close', 'close']):
+        response = f"{stock['ticker']} most recently closed at {format_currency(latest)}. "
+        if history is not None:
+            weekly = compute_period_return(history, 5)
+            if weekly is not None:
+                response += f"That is about {format_percent(weekly)} over the last 5 trading days. "
+        return response + f"Overall, it has returned {performance} in the loaded window."
+
+    if any(keyword in prompt_lower for keyword in ['return', 'performance', 'gain', 'loss']):
+        response = (
+            f"{stock['ticker']} returned {performance} in the historical window loaded. "
+            f"Its average price was {average}, and it has {volatility} annualized volatility."
+        )
+        if history is not None:
+            month = compute_period_return(history, 21)
+            if month is not None:
+                response += f" Over the last month in this dataset it changed by {format_percent(month)}."
+        return response
+
+    if any(keyword in prompt_lower for keyword in ['risk', 'volatile', 'volatility', 'risky']):
+        return (
+            f"{stock['ticker']} has an annualized volatility of {volatility}, which is its primary risk signal in the loaded snapshot. "
+            f"Its drawdown from the high is {drawdown}."
+        )
+
+    if any(keyword in prompt_lower for keyword in ['drawdown', 'pullback', 'near high', 'below high', 'peak', 'low']):
+        return (
+            f"{stock['ticker']}'s drawdown from its period high is {drawdown}. "
+            f"Its average price over the period was {average}, and it currently trades at {format_currency(latest)}."
+        )
+
+    if any(keyword in prompt_lower for keyword in ['trend', 'momentum', 'better than', 'stronger than', 'compare']):
+        return (
+            f"{stock['ticker']} is currently ranked #{rank} in the analysis and has returned {performance} while showing {volatility} volatility. "
+            f"Compared to its own average price, it is {format_percent(stock['trend_vs_average_pct'])} "
+            f"{'above' if stock['trend_vs_average_pct'] >= 0 else 'below'} the period average."
+        )
+
+    return (
+        f"{describe_stock(stock)} "
+        f"It ranks #{rank} in the current watchlist and shows {drawdown} drawdown with {volatility} volatility."
+    )
+
+
 def answer_prompt(prompt, snapshot):
     """Generate AI response to user prompt based on loaded stock snapshot."""
     try:
         if not prompt or not isinstance(prompt, str):
             return "Please enter a valid question."
-        
+
         prompt_lower = prompt.lower().strip()
-        
+
         if not snapshot or not snapshot.get('stocks'):
             return (
                 'Run the historical advisor first so I have a ranked watchlist to analyze. '
                 'I score stocks from past price behavior instead of using an external AI API.'
             )
-        
-        # Get stocks mentioned in the prompt
+
         try:
             mentioned_stocks = get_ticker_mentions(prompt, snapshot['stocks'])
         except Exception:
             mentioned_stocks = []
-        
-        # Best stock recommendation
+
+        if any(keyword in prompt_lower for keyword in ['compare', 'vs', 'versus']) and len(mentioned_stocks) >= 2:
+            return build_comparison_response(mentioned_stocks)
+
         if any(keyword in prompt_lower for keyword in ['which stock', 'what should i buy', 'purchase', 'buy', 'best stock', 'recommend']):
             return build_recommendation(snapshot)
-        
-        # Stock comparison
-        if 'compare' in prompt_lower and len(mentioned_stocks) >= 2:
-            return build_comparison_response(mentioned_stocks)
-        
-        # Risk analysis
+
         if any(keyword in prompt_lower for keyword in ['risk', 'risky', 'volatile', 'volatility']):
             return build_risk_response(snapshot)
-        
-        # Drawdown analysis
-        if any(keyword in prompt_lower for keyword in ['drawdown', 'pullback', 'near high', 'below high']):
+
+        if any(keyword in prompt_lower for keyword in ['drawdown', 'pullback', 'near high', 'below high', 'peak']):
             return build_drawdown_response(snapshot)
-        
-        # Specific stock mentioned
-        if mentioned_stocks:
-            try:
-                stock = sorted(mentioned_stocks, key=lambda item: item['score'], reverse=True)[0]
-                stock_description = describe_stock(stock)
-                rank = snapshot['stocks'].index(stock) + 1
-                return f"{stock_description}\n\nWithin the current watchlist, {stock['ticker']} ranks #{rank} by the assistant's score."
-            except Exception:
-                pass
-        
-        # Fallback response
-        try:
-            top_two = snapshot['stocks'][:2]
-            fallback = [
-                'I can answer from the locally generated historical ranking without any API key.',
-                f"Right now the highest-ranked stock is {top_two[0]['ticker']}.",
-                f"Second place is {top_two[1]['ticker']}." if len(top_two) > 1 else "Only one stock is available in the current analysis.",
-                "Ask me which stock to buy, compare two tickers, or ask about risk and volatility.",
-            ]
-            return "\n\n".join(fallback)
-        except Exception:
-            return "I'm ready to analyze stocks. Ask which stock looks best, compare two tickers, or ask about volatility and drawdowns."
-    
+
+        if len(mentioned_stocks) == 1:
+            return build_stock_response(mentioned_stocks[0], prompt, snapshot)
+
+        if len(mentioned_stocks) > 1:
+            return build_comparison_response(mentioned_stocks)
+
+        if any(keyword in prompt_lower for keyword in ['how many', 'how much', 'number of', 'total']):
+            return f"I currently have {len(snapshot['stocks'])} stocks loaded in the snapshot covering {snapshot.get('start_date')} through {snapshot.get('end_date')} ."
+
+        return build_general_response(prompt, snapshot)
     except Exception as e:
         return f"I encountered an issue responding to your question: {str(e)}"
 
