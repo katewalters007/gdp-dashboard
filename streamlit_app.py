@@ -764,8 +764,33 @@ with transaction_tab:
                     step=0.1,
                     key='tax_rate_tx',
                 )
-            else:
-                st.warning(f'Could not fetch data for {ticker}')
+            
+            notes_tx = st.text_area('Notes (optional)', key='notes_tx')
+            submitted = st.form_submit_button('Add Transaction', type='primary')
+            
+            if submitted:
+                if not ticker_tx:
+                    st.error('Please enter a ticker symbol.')
+                elif quantity <= 0:
+                    st.error('Quantity must be greater than 0.')
+                elif price <= 0:
+                    st.error('Price must be greater than 0.')
+                else:
+                    add_transaction(
+                        current_user['id'],
+                        str(trade_date),
+                        ticker_tx,
+                        action,
+                        quantity,
+                        price,
+                        tax_area_tx,
+                        tax_rate_tx / 100.0,
+                        notes_tx,
+                    )
+                    st.success('Transaction added successfully!')
+                    st.rerun()
+    else:
+        st.info('Please log in to add transactions.')
 
     if analysis_summary:
         top_pick = analysis_summary[0]
@@ -775,33 +800,33 @@ with transaction_tab:
             f"Open the AI Assistant page for a deeper explanation."
         )
     
-    # Display detailed statistics
-    st.subheader('Performance Statistics')
-    stats_data = []
-    for item in analysis_summary:
-        stats_data.append({
-            'Ticker': item['ticker'],
-            'Current Price': f"${item['current_price']:.2f}",
-            'Period Return': f"{item['percent_change']:.2f}%",
-            'Annualized Volatility': f"{item['volatility_pct']:.2f}%",
-            'Drawdown From High': f"{item['drawdown_pct']:.2f}%",
-            'Average Price': f"${item['average_price']:.2f}",
-            'AI Score': f"{item['score']:.2f}",
-        })
-    
-    if stats_data:
-        stats_df = pd.DataFrame(stats_data)
-        st.dataframe(stats_df, width='stretch')
-else:
-    st.session_state.analysis_snapshot = {
-        'generated_at': datetime.now().isoformat(),
-        'start_date': str(start_date),
-        'end_date': str(end_date),
-        'selected_tickers': selected_tickers,
-        'stocks': [],
-        'top_pick': None,
-    }
-    st.error('Could not fetch data for any of the selected tickers. Please check the ticker symbols.')
+        # Display detailed statistics
+        st.subheader('Performance Statistics')
+        stats_data = []
+        for item in analysis_summary:
+            stats_data.append({
+                'Ticker': item['ticker'],
+                'Current Price': f"${item['current_price']:.2f}",
+                'Period Return': f"{item['percent_change']:.2f}%",
+                'Annualized Volatility': f"{item['volatility_pct']:.2f}%",
+                'Drawdown From High': f"{item['drawdown_pct']:.2f}%",
+                'Average Price': f"${item['average_price']:.2f}",
+                'AI Score': f"{item['score']:.2f}",
+            })
+        
+        if stats_data:
+            stats_df = pd.DataFrame(stats_data)
+            st.dataframe(stats_df, width='stretch')
+        else:
+            st.session_state.analysis_snapshot = {
+                'generated_at': datetime.now().isoformat(),
+                'start_date': str(start_date),
+                'end_date': str(end_date),
+                'selected_tickers': selected_tickers,
+                'stocks': [],
+                'top_pick': None,
+            }
+            st.error('Could not fetch data for any of the selected tickers. Please check the ticker symbols.')
 
 # Sidebar for Latest Stock News
 with st.sidebar:
