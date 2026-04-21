@@ -24,10 +24,8 @@ if 'auth_user' not in st.session_state:
 apply_page_theme('Trading Strategy Sandbox', 'Test and create custom trading strategies on historical data.')
 render_top_nav(show_sandbox=False)
 
-nav_spacer_l, nav_col1, nav_col2, nav_col3, nav_spacer_r = st.columns([1, 1, 1, 1, 1])
+nav_spacer_l, nav_col1, nav_spacer_r = st.columns([1.4, 1, 1.4])
 with nav_col1:
-    st.page_link('pages/make_account.py', label='Create Account')
-with nav_col2:
     st.page_link('pages/ai_assistant.py', label='AI Assistant')
 with nav_col3:
     st.page_link('pages/post_login_analytics.py', label='Analytics')

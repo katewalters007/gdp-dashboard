@@ -13,7 +13,7 @@ render_top_nav()
 
 nav_spacer_l, nav_col1, nav_col2, nav_col3, nav_spacer_r = st.columns([1, 1, 1, 1, 1])
 with nav_col1:
-    st.page_link('pages/make_account.py', label='Create Account')
+    st.page_link('pages/login.py', label='Login')
 with nav_col2:
     st.page_link('pages/post_login_analytics.py', label='Analytics')
 with nav_col3:
