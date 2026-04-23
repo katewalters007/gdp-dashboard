@@ -87,7 +87,7 @@ def render_top_nav(show_analytics=True, show_sandbox=True):
     with c1:
         st.page_link("streamlit_app.py", label="Stock Tracker")
     with c2:
-        st.page_link("pages/login.py", label="Login")
+        st.page_link("pages/Login.py", label="Login")
     with c3:
         if show_analytics:
             st.page_link("pages/post_login_analytics.py", label="Analytics")

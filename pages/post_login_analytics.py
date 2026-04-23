@@ -18,9 +18,9 @@ render_top_nav()
 
 nav_spacer_l, nav_col1, nav_col2, nav_col3, nav_spacer_r = st.columns([1, 1, 1, 1, 1])
 with nav_col1:
-    st.page_link('pages/login.py', label='Login')
+    st.page_link('pages/Login.py', label='Login')
 with nav_col2:
-    st.page_link('pages/ai_assistant.py', label='AI Assistant')
+    st.page_link('pages/Ai_Assistant.py', label='AI Assistant')
 with nav_col3:
     st.page_link('pages/trading_sandbox.py', label='Trading Sandbox')
 

@@ -24,10 +24,10 @@ if 'auth_user' not in st.session_state:
 apply_page_theme('Trading Strategy Sandbox', 'Test and create custom trading strategies on historical data.')
 render_top_nav(show_sandbox=False)
 
-nav_spacer_l, nav_col1, nav_spacer_r = st.columns([1.4, 1, 1.4])
+nav_spacer_l, nav_col1, nav_col2, nav_spacer_r = st.columns([1, 1, 1, 1])
 with nav_col1:
-    st.page_link('pages/ai_assistant.py', label='AI Assistant')
-with nav_col3:
+    st.page_link('pages/Ai_Assistant.py', label='AI Assistant')
+with nav_col2:
     st.page_link('pages/post_login_analytics.py', label='Analytics')
 
 if not st.session_state.auth_user:
@@ -72,33 +72,43 @@ def backtest_strategy(data, strategy_type, params, initial_cash=10000):
     trades = []
     portfolio_values = []
 
+    close_prices = data['Close']
+    if isinstance(close_prices, pd.DataFrame):
+        close_prices = close_prices.squeeze(axis=1)
+        if isinstance(close_prices, pd.DataFrame):
+            close_prices = close_prices.iloc[:, 0]
+
     if strategy_type == 'MA Crossover':
-        short_ma = calculate_sma(data['Close'], params['short_period'])
-        long_ma = calculate_sma(data['Close'], params['long_period'])
+        short_ma = calculate_sma(close_prices, params['short_period'])
+        long_ma = calculate_sma(close_prices, params['long_period'])
         signal = (short_ma > long_ma).astype(int) - (short_ma < long_ma).astype(int)
         signal = signal.fillna(0)
     elif strategy_type == 'RSI Oversold':
-        rsi = calculate_rsi(data['Close'], params['rsi_period'])
+        rsi = calculate_rsi(close_prices, params['rsi_period'])
         signal = pd.Series(0, index=data.index)
         signal[rsi < params['oversold']] = 1
         signal[rsi > params['overbought']] = -1
         signal = signal.fillna(0)
     elif strategy_type == 'Simple MA':
-        ma = calculate_sma(data['Close'], params['ma_period'])
-        signal = (data['Close'] > ma).astype(int) - (data['Close'] < ma).astype(int)
+        ma = calculate_sma(close_prices, params['ma_period'])
+        signal = (close_prices > ma).astype(int) - (close_prices < ma).astype(int)
         signal = signal.fillna(0)
     else:
         return None, None, None
 
+    if isinstance(signal, pd.DataFrame):
+        signal = signal.squeeze()
+    signal = signal.astype(int)
+
     for i in range(1, len(data)):
         date = data.index[i]
-        price = data['Close'].iloc[i]
-        prev_signal = signal.iloc[i-1] if i > 0 else 0
-        curr_signal = signal.iloc[i]
+        price = close_prices.iloc[i]
+        prev_signal = int(signal.iloc[i-1]) if i > 0 else 0
+        curr_signal = int(signal.iloc[i])
 
         # Execute trades
         if curr_signal == 1 and position == 0:  # Buy
-            shares = cash // price
+            shares = int(cash // price)
             if shares > 0:
                 cash -= shares * price
                 position += shares
@@ -111,7 +121,7 @@ def backtest_strategy(data, strategy_type, params, initial_cash=10000):
         portfolio_value = cash + position * price
         portfolio_values.append({'date': date, 'portfolio_value': portfolio_value, 'cash': cash, 'position': position})
 
-    return pd.DataFrame(trades), pd.DataFrame(portfolio_values), cash + position * data['Close'].iloc[-1] if not data.empty else initial_cash
+    return pd.DataFrame(trades), pd.DataFrame(portfolio_values), cash + position * close_prices.iloc[-1] if not data.empty else initial_cash
 
 # Main UI
 st.header('Trading Strategy Sandbox')
@@ -237,7 +247,7 @@ with col2:
                     st.metric('Final Portfolio Value', f'${final_value:.2f}')
                     
                     if not portfolio_df.empty:
-                        st.line_chart(portfolio_df.set_index('date')['portfolio_value'], use_container_width=True)
+                        st.line_chart(portfolio_df.set_index('date')['portfolio_value'], width='stretch')
                     
                     st.subheader('Trades')
                     if not trades_df.empty:

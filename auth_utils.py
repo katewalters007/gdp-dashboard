@@ -125,6 +125,18 @@ def authenticate_user(email: str, password: str) -> tuple[bool, str]:
     return True, "Login successful."
 
 
+def get_user_by_email(email: str) -> dict[str, Any] | None:
+    """Retrieve user data by email."""
+    users = _load_users()
+    user_index = _find_user_index_by_email(users, email)
+    
+    if user_index is None:
+        return None
+    
+    user = users[user_index]
+    return {"email": user.get("email"), "id": user_index}
+
+
 def generate_and_store_temporary_password(email: str, expires_minutes: int = 30) -> tuple[bool, str | None]:
     normalized_email = _normalize_email(email)
     users = _load_users()

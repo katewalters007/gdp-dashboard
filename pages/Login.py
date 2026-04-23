@@ -6,6 +6,7 @@ from auth_utils import (
     authenticate_user,
     create_user,
     generate_and_store_temporary_password,
+    get_user_by_email,
     is_valid_email,
     reset_password_with_temporary,
     send_password_changed_notification,
@@ -229,8 +230,11 @@ with tabs[0]:
         else:
             success, message = authenticate_user(normalized_email, login_password)
             if success:
+                user = get_user_by_email(normalized_email)
+                st.session_state.auth_user = user
+                st.session_state.authenticated_user_email = normalized_email
                 st.success(message)
-                st.session_state["authenticated_user_email"] = normalized_email
+                st.switch_page("streamlit_app.py")
             else:
                 st.error(message)
 
@@ -250,8 +254,11 @@ with tabs[1]:
         else:
             success, message = create_user(normalized_email, signup_password)
             if success:
+                user = get_user_by_email(normalized_email)
+                st.session_state.auth_user = user
+                st.session_state.authenticated_user_email = normalized_email
                 st.success(message)
-                st.info("You can now sign in using your new account in the Sign In tab.")
+                st.switch_page("streamlit_app.py")
             else:
                 st.error(message)
 

@@ -78,4 +78,6 @@ def build_profit_analytics(transactions):
                 df.at[idx, 'estimated_tax'] = profit * tax_rate if profit > 0 else 0.0
                 df.at[idx, 'net_profit'] = profit - df.at[idx, 'estimated_tax']
     
+    df['cumulative_net_profit'] = df['net_profit'].cumsum()
+    df['tax_rate_pct'] = df['tax_rate'] * 100
     return df

@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import requests
 import feedparser
 from analytics_utils import TAX_RATES, build_profit_analytics
+from stock_analysis import get_suggested_stocks, normalize_tickers, get_stock_data, build_analysis_snapshot
 from user_backend import (
     init_db,
     save_watchlist,
@@ -483,7 +484,13 @@ with col2:
 
 st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
 
-# Initialize session state for selected tickers
+# Initialize session state
+if 'auth_user' not in st.session_state:
+    st.session_state.auth_user = None
+
+if 'watchlist_loaded_for' not in st.session_state:
+    st.session_state.watchlist_loaded_for = None
+
 if 'selected_tickers_list' not in st.session_state:
     st.session_state.selected_tickers_list = ['AAPL', 'GOOGL', 'MSFT']
 
@@ -563,6 +570,7 @@ if not combined_data.empty:
     st.subheader('Current Stock Data')
     
     cols = st.columns(min(len(selected_tickers), 4))
+    stats_data = []
     
     for i, ticker in enumerate(selected_tickers):
         col = cols[i % len(cols)]
@@ -583,11 +591,11 @@ if not combined_data.empty:
                     'Average Price': f'${avg:.2f}'
                 })
 
-        if stats_data:
-            stats_df = pd.DataFrame(stats_data)
-            st.dataframe(stats_df, width='stretch')
+    if stats_data:
+        stats_df = pd.DataFrame(stats_data)
+        st.dataframe(stats_df, width='stretch')
 
-        if current_user:
+    if current_user:
             triggered_alerts = []
             for ticker in selected_tickers:
                 entry = watchlist_entries_map.get(ticker, {})
