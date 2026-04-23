@@ -750,7 +750,7 @@ with st.container(border=True):
     with control_col3:
         end_date = st.date_input('End date', value=end_date, min_value=start_date, max_value=datetime.now().date(), key='advisor_end_date')
         top_pick_count = st.slider('How many buy ideas to show', min_value=1, max_value=5, value=3)
-        analyze_clicked = st.button('Run advisor', width='stretch')
+        analyze_clicked = st.button('Run advisor')
 
 if analyze_clicked or not snapshot['stocks']:
     advisor_tickers = normalize_tickers(tickers_value)
@@ -784,13 +784,13 @@ else:
 
 quick_col1, quick_col2, quick_col3 = st.columns(3)
 with quick_col1:
-    if st.button('Which stock should I purchase?', width='stretch'):
+    if st.button('Which stock should I purchase?'):
         st.session_state.ai_quick_prompt = 'Which stock should I purchase right now?'
 with quick_col2:
-    if st.button('Which stock is the least risky?', width='stretch'):
+    if st.button('Which stock is the least risky?'):
         st.session_state.ai_quick_prompt = 'Which stock is the least risky?'
 with quick_col3:
-    if st.button('Compare the top two stocks', width='stretch'):
+    if st.button('Compare the top two stocks'):
         if len(snapshot['stocks']) >= 2:
             first = snapshot['stocks'][0]['ticker']
             second = snapshot['stocks'][1]['ticker']
@@ -800,7 +800,7 @@ with quick_col3:
 
 st.subheader('Current Ranking')
 if snapshot['stocks']:
-    st.dataframe(build_rank_table(snapshot), width='stretch')
+    st.dataframe(build_rank_table(snapshot))
 
 st.subheader('Top Ideas')
 if snapshot['stocks']:
@@ -817,7 +817,7 @@ try:
     if snapshot.get('stocks'):
         normalized_chart = build_normalized_chart_data(snapshot)
         if not normalized_chart.empty:
-            st.line_chart(normalized_chart, width='stretch')
+            st.line_chart(normalized_chart)
         else:
             st.info('Not enough price history to draw the normalized comparison chart.')
     else:

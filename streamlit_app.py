@@ -5,6 +5,19 @@ import feedparser
 from datetime import datetime, timedelta
 
 from stock_analysis import build_analysis_snapshot, get_stock_data, get_suggested_stocks, normalize_tickers
+from auth_utils import (
+    get_user_preferences,
+    update_user_theme,
+    add_price_alert,
+    remove_price_alert,
+    get_triggered_alerts,
+    send_price_alert_email,
+    mark_alert_as_triggered,
+    get_smtp_config,
+    _load_users,
+    _save_users,
+    _find_user_index_by_email,
+)
 
 # Set the title and favicon that appear in the Browser's tab bar.
 st.set_page_config(
@@ -306,6 +319,21 @@ st.markdown("""
                 color: var(--dark-text) !important;
             }
 
+            /* Ensure all form labels and input labels are visible */
+            [data-testid="stDateInput"] label,
+            [data-testid="stNumberInput"] label,
+            [data-testid="stTextInput"] label,
+            [data-testid="stSelectbox"] label,
+            [data-testid="stMultiSelect"] label,
+            .stDateInput label,
+            .stNumberInput label,
+            .stTextInput label,
+            .stSelectbox label,
+            .stMultiSelect label,
+            [data-baseweb="label"] {
+                color: var(--dark-text) !important;
+            }
+
             h1,
             h2,
             h3,
@@ -324,10 +352,14 @@ st.markdown("""
             }
 
             .stMarkdownContainer h3,
-            .stMarkdownContainer h3 *,
+            .stMarkdownContainer h3 * {
+                color: #E8D5B7 !important;
+                background-color: transparent !important;
+            }
+
             [data-testid="stAlert"] > div:nth-child(2),
             [data-testid="stAlert"] > div:nth-child(2) * {
-                color: var(--beige-text) !important;
+                color: var(--dark-text) !important;
             }
 
             .main,
@@ -348,6 +380,18 @@ st.markdown("""
                 color: var(--dark-text) !important;
             }
 
+            /* Ensure chart text is visible */
+            .stPlotlyContainer svg text,
+            [data-testid="stMetricValue"] {
+                color: var(--dark-text) !important;
+                fill: var(--dark-text) !important;
+            }
+
+            [data-testid="stMetricLabel"],
+            [data-testid="stMetricDelta"] {
+                color: var(--dark-muted) !important;
+            }
+
             input,
             textarea,
             [data-testid="stDateInput"],
@@ -362,13 +406,187 @@ st.markdown("""
                 color: var(--dark-muted) !important;
             }
 
+            /* Explicit styling for subheaders */
+            h2, h3, h4, h5, h6 {
+                color: #E8D5B7 !important;
+            }
+
+            /* Ensure dataframe text is readable */
+            [data-testid="dataFrame"] td,
+            [data-testid="dataFrame"] th {
+                color: var(--dark-text) !important;
+                background-color: rgba(30, 45, 56, 0.5) !important;
+            }
+
+            [data-testid="dataFrame"] thead th {
+                background-color: rgba(45, 106, 159, 0.7) !important;
+                color: #FFFFFF !important;
+            }
+
+            /* Graph/chart area background */
+            .stPlotlyContainer svg rect:first-child {
+                fill: rgba(30, 45, 56, 0.5) !important;
+            }
+
             a,
             [data-testid="stSidebar"] a {
                 color: #9FD3E6 !important;
             }
+
+            /* Form labels and wrapper text */
+            [data-testid="stDateInput"] > div > label,
+            [data-testid="stNumberInput"] > div > label,
+            [data-testid="stTextInput"] > div > label,
+            [data-testid="stSelectbox"] > div > label,
+            .stDateInput > label,
+            .stNumberInput > label,
+            .stTextInput > label,
+            .stSelectbox > label {
+                color: var(--dark-text) !important;
+            }
+
+            /* Wrapper divs for form elements */
+            [data-testid="stDateInput"] > div,
+            [data-testid="stNumberInput"] > div,
+            [data-testid="stTextInput"] > div,
+            [data-testid="stSelectbox"] > div {
+                color: var(--dark-text) !important;
+            }
+
+            /* Ensure button text is visible */
+            [data-testid="stButton"] button {
+                color: white !important;
+            }
         }
     </style>
 """, unsafe_allow_html=True)
+
+# Initialize user preferences
+if 'authenticated_user_email' not in st.session_state:
+    st.session_state.authenticated_user_email = None
+
+if 'user_preferences' not in st.session_state:
+    st.session_state.user_preferences = None
+
+# Load user preferences if authenticated
+if st.session_state.authenticated_user_email:
+    st.session_state.user_preferences = get_user_preferences(st.session_state.authenticated_user_email)
+
+# Apply theme based on user preference
+current_theme = st.session_state.user_preferences.get("theme", "light") if st.session_state.user_preferences else "light"
+
+# Add theme-specific CSS overrides if dark mode
+if current_theme == "dark":
+    st.markdown("""
+        <style>
+            [data-testid="stAppViewContainer"] {
+                background: linear-gradient(180deg, #0F1A22 0%, #162631 100%) !important;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+
+# Add sidebar preferences panel for authenticated users
+if st.session_state.authenticated_user_email:
+    with st.sidebar:
+        st.markdown(f"**👤 {st.session_state.authenticated_user_email}**")
+        
+        if st.button("🚪 Logout", key="logout_btn"):
+            st.session_state.authenticated_user_email = None
+            st.session_state.user_preferences = None
+            st.experimental_rerun()
+        
+        st.divider()
+        st.markdown("### ⚙️ Settings")
+        
+        # Theme toggle
+        new_theme = st.selectbox(
+            "Select Theme",
+            ["light", "dark"],
+            index=0 if current_theme == "light" else 1,
+            key="theme_selector"
+        )
+        
+        if new_theme != current_theme:
+            success, message = update_user_theme(st.session_state.authenticated_user_email, new_theme)
+            if success:
+                st.success(message)
+                st.session_state.user_preferences["theme"] = new_theme
+                st.experimental_rerun()
+            else:
+                st.error(message)
+        
+        # Notification toggle
+        notifications_enabled = st.session_state.user_preferences.get("enable_notifications", True)
+        new_notifications_enabled = st.checkbox(
+            "Enable Email Notifications",
+            value=notifications_enabled,
+            key="notifications_toggle"
+        )
+        
+        # Update notifications preference if changed
+        if new_notifications_enabled != notifications_enabled:
+            users = _load_users()
+            user_index = _find_user_index_by_email(users, st.session_state.authenticated_user_email)
+            if user_index is not None:
+                users[user_index]["preferences"]["enable_notifications"] = new_notifications_enabled
+                _save_users(users)
+                st.session_state.user_preferences["enable_notifications"] = new_notifications_enabled
+                st.success("Notification settings updated!")
+                st.experimental_rerun()
+        
+        st.divider()
+        st.markdown("### 🔔 Price Alerts")
+        
+        with st.expander("Manage Price Alerts"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                alert_ticker = st.text_input("Ticker", placeholder="e.g., AAPL").upper()
+            
+            with col2:
+                alert_type = st.selectbox("Alert Type", ["above", "below"])
+            
+            alert_price = st.number_input("Price ($)", min_value=0.01, step=0.01)
+            
+            if st.button("Add Alert"):
+                if alert_ticker:
+                    success, message = add_price_alert(
+                        st.session_state.authenticated_user_email,
+                        alert_ticker,
+                        alert_type,
+                        alert_price
+                    )
+                    if success:
+                        st.success(message)
+                        st.session_state.user_preferences = get_user_preferences(
+                            st.session_state.authenticated_user_email
+                        )
+                    else:
+                        st.error(message)
+                else:
+                    st.error("Please enter a ticker symbol")
+            
+            st.markdown("#### Active Alerts")
+            price_alerts = st.session_state.user_preferences.get("price_alerts", {})
+            
+            if price_alerts:
+                for alert_key, alert_info in price_alerts.items():
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.caption(f"**{alert_info['ticker']}** {alert_info['type'].title()} ${alert_info['price']:.2f}")
+                    with col2:
+                        if st.button("✕", key=f"remove_{alert_key}"):
+                            success, message = remove_price_alert(
+                                st.session_state.authenticated_user_email,
+                                alert_key
+                            )
+                            if success:
+                                st.session_state.user_preferences = get_user_preferences(
+                                    st.session_state.authenticated_user_email
+                                )
+                                st.experimental_rerun()
+            else:
+                st.caption("No active alerts")
 
 # -----------------------------------------------------------------------------
 # Declare some useful functions.
@@ -439,6 +657,15 @@ def get_stock_news(ticker):
 # -----------------------------------------------------------------------------
 # Draw the actual page
 
+# Display price alert notifications if user is authenticated
+if st.session_state.authenticated_user_email and st.session_state.user_preferences:
+    ticker_data_for_alerts = {}
+    
+    # We'll check alerts when we have ticker data
+    st.session_state.check_alerts = True
+else:
+    st.session_state.check_alerts = False
+
 # Set the title that appears at the top of the page.
 st.markdown("""
     <h1 class='page-title' style='font-family: "Playfair Display", serif; text-align: center; letter-spacing: 2px; font-size: 56px;'>Stock Tracker</h1>
@@ -490,10 +717,10 @@ cols = st.columns(min(len(suggested_stocks), 5))
 
 for i, ticker in enumerate(suggested_stocks[:5]):
     with cols[i % len(cols)]:
-        if st.button(ticker, key=f'sugg_{ticker}', width='stretch'):
+        if st.button(ticker, key=f'sugg_{ticker}'):
             if ticker not in st.session_state.selected_tickers_list:
                 st.session_state.selected_tickers_list.append(ticker)
-            st.rerun()
+            st.experimental_rerun()
 
 if ticker_input:
     selected_tickers = normalize_tickers(ticker_input)
@@ -525,10 +752,47 @@ for ticker in selected_tickers:
 st.session_state.analysis_snapshot = build_analysis_snapshot(ticker_data, start_date, end_date, selected_tickers)
 analysis_summary = st.session_state.analysis_snapshot['stocks']
 
+# Check for triggered price alerts and send email notifications
+if st.session_state.authenticated_user_email and st.session_state.user_preferences and ticker_data:
+    current_prices = {ticker: data['Close'].iloc[-1] for ticker, data in ticker_data.items()}
+    triggered_alerts = get_triggered_alerts(st.session_state.authenticated_user_email, current_prices)
+    
+    if triggered_alerts:
+        st.divider()
+        st.markdown("### 🔔 Price Alert Notifications")
+        
+        # Send email notifications for triggered alerts
+        smtp_config = get_smtp_config()
+        notifications_sent = 0
+        
+        for alert in triggered_alerts:
+            st.info(alert["message"])
+            
+            # Send email notification if notifications are enabled
+            if st.session_state.user_preferences.get("enable_notifications", True):
+                if smtp_config:
+                    success, email_msg = send_price_alert_email(
+                        st.session_state.authenticated_user_email,
+                        alert,
+                        smtp_config
+                    )
+                    if success:
+                        # Mark alert as triggered so we don't send duplicate emails
+                        mark_alert_as_triggered(
+                            st.session_state.authenticated_user_email,
+                            alert["alert_key"]
+                        )
+                        notifications_sent += 1
+        
+        if notifications_sent > 0:
+            st.success(f"✅ {notifications_sent} email notification(s) sent!")
+        
+        st.divider()
+
 if not combined_data.empty:
     # Display historical price chart
     st.subheader('Stock Price Over Time')
-    st.line_chart(combined_data, width='stretch')
+    st.line_chart(combined_data)
     
     # Display current metrics
     st.subheader('Current Stock Data')
@@ -579,7 +843,7 @@ if not combined_data.empty:
     
     if stats_data:
         stats_df = pd.DataFrame(stats_data)
-        st.dataframe(stats_df, width='stretch')
+        st.dataframe(stats_df)
 else:
     st.session_state.analysis_snapshot = {
         'generated_at': datetime.now().isoformat(),
@@ -595,9 +859,9 @@ else:
 with st.sidebar:
     st.markdown("<h2 style='font-family: \"Playfair Display\", serif; letter-spacing: 1px; font-size: 36px;'>Latest News</h2>", unsafe_allow_html=True)
     
-    if st.button('Refresh', key='refresh_news', width='stretch'):
+    if st.button('Refresh', key='refresh_news'):
         st.cache_data.clear()
-        st.rerun()
+        st.experimental_rerun()
     
     st.divider()
     
