@@ -384,7 +384,7 @@ st.markdown("""
 
 # -----------------------------------------------------------------------------
 # Declare some useful functions.
-
+#Pulls news articles for a given stock ticker from multiple sources, including yfinance and RSS feeds. The function formats the news data into a consistent structure for display in the sidebar. It also includes error handling to ensure that the app remains functional even if some sources fail to provide data.
 @st.cache_data(ttl='5m')
 def get_stock_news(ticker):
     """Fetch news articles for a stock ticker from multiple sources."""

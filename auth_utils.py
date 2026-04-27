@@ -277,3 +277,127 @@ def reset_password_with_temporary(
 
     # Keep account existence private in this endpoint.
     return False, "Password reset could not be completed."
+
+
+# ============================================================================
+# PRICE ALERT FUNCTIONS
+# ============================================================================
+
+ALERTS_FILE = BASE_DIR / "data" / "alerts.json"
+
+
+def _ensure_alerts_file() -> None:
+    ALERTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    if not ALERTS_FILE.exists():
+        ALERTS_FILE.write_text("[]", encoding="utf-8")
+
+
+def _load_alerts() -> list[dict[str, Any]]:
+    _ensure_alerts_file()
+    try:
+        return json.loads(ALERTS_FILE.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return []
+
+
+def _save_alerts(alerts: list[dict[str, Any]]) -> None:
+    ALERTS_FILE.write_text(json.dumps(alerts, indent=2), encoding="utf-8")
+
+
+def create_price_alert(
+    email: str, ticker: str, alert_type: str, price_threshold: float
+) -> tuple[bool, str]:
+    """
+    Create a price alert for a user.
+    
+    Args:
+        email: User email address
+        ticker: Stock ticker symbol (will be uppercased)
+        alert_type: 'above' or 'below'
+        price_threshold: Price threshold in dollars
+        
+    Returns:
+        Tuple of (success: bool, message: str)
+    """
+    if not is_valid_email(email):
+        return False, "Invalid email address."
+    
+    if alert_type not in ["above", "below"]:
+        return False, "Alert type must be 'above' or 'below'."
+    
+    if price_threshold <= 0:
+        return False, "Price threshold must be greater than zero."
+    
+    normalized_email = _normalize_email(email)
+    alerts = _load_alerts()
+    
+    # Check if alert already exists
+    for alert in alerts:
+        if (
+            _normalize_email(alert.get("email", "")) == normalized_email
+            and alert.get("ticker") == ticker.upper()
+            and alert.get("alert_type") == alert_type
+            and alert.get("active")
+        ):
+            return False, f"An active alert for {ticker} at ${price_threshold} already exists."
+    
+    new_alert = {
+        "email": normalized_email,
+        "ticker": ticker.upper(),
+        "alert_type": alert_type,
+        "price_threshold": float(price_threshold),
+        "active": True,
+        "triggered": False,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "triggered_at": None,
+        "triggered_price": None,
+    }
+    
+    alerts.append(new_alert)
+    _save_alerts(alerts)
+    return True, f"Alert created: {ticker} will trigger when price goes {alert_type} ${price_threshold}."
+
+
+def get_user_alerts(email: str) -> list[dict[str, Any]]:
+    """Get all alerts for a user."""
+    normalized_email = _normalize_email(email)
+    alerts = _load_alerts()
+    return [a for a in alerts if _normalize_email(a.get("email", "")) == normalized_email]
+
+
+def delete_price_alert(email: str, alert_id: int) -> tuple[bool, str]:
+    """Delete a specific alert by index."""
+    normalized_email = _normalize_email(email)
+    alerts = _load_alerts()
+    
+    user_alerts = [
+        (idx, a)
+        for idx, a in enumerate(alerts)
+        if _normalize_email(a.get("email", "")) == normalized_email
+    ]
+    
+    if alert_id < 0 or alert_id >= len(user_alerts):
+        return False, "Alert not found."
+    
+    global_idx, _ = user_alerts[alert_id]
+    alerts.pop(global_idx)
+    _save_alerts(alerts)
+    return True, "Alert deleted."
+
+
+def send_price_alert_email(to_email: str, ticker: str, current_price: float, threshold: float, alert_type: str, smtp_config: dict) -> tuple[bool, str]:
+    """Send price alert notification email."""
+    direction_text = "above" if alert_type == "above" else "below"
+    subject = f"Price Alert: {ticker} reached your {direction_text} threshold"
+    body = (
+        f"Hello,\n\n"
+        f"Your Stock Tracker price alert has triggered!\n\n"
+        f"Ticker: {ticker}\n"
+        f"Alert Type: {direction_text}\n"
+        f"Threshold: ${threshold:.2f}\n"
+        f"Current Price: ${current_price:.2f}\n\n"
+        f"Log in to your Stock Tracker account to set new alerts or manage your preferences.\n\n"
+        f"Best regards,\n"
+        f"Stock Tracker"
+    )
+    return _send_email(to_email, subject, body, smtp_config)
