@@ -24,7 +24,7 @@ A simple Streamlit app for tracking historical and current stock prices, plus a 
 2. Run the app
 
    ```
-   $ streamlit run Stock_Tracker.py
+   $ streamlit run streamlit_app.py
    ```
 
 3. Enter stock tickers (e.g., AAPL, GOOGL, MSFT) and adjust the date range to explore stock data
