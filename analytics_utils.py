@@ -60,23 +60,24 @@ def build_profit_analytics(transactions):
                 cost_basis[ticker] = {'total_cost': 0.0, 'total_shares': 0.0}
             cost_basis[ticker]['total_cost'] += quantity * price
             cost_basis[ticker]['total_shares'] += quantity
-            
-    elif action == 'SELL':
-        if ticker in cost_basis and cost_basis[ticker]['total_shares'] > 0:
-            available_shares = cost_basis[ticker]['total_shares']
-            sell_quantity = min(quantity, available_shares)  # Cap at available
-            avg_cost = cost_basis[ticker]['total_cost'] / available_shares
-            profit = (price - avg_cost) * sell_quantity
-            
-            cost_basis[ticker]['total_shares'] -= sell_quantity
-            cost_basis[ticker]['total_cost'] = max(0, cost_basis[ticker]['total_cost'] - avg_cost * sell_quantity)
-            
-            if cost_basis[ticker]['total_shares'] <= 0:
-                cost_basis[ticker] = {'total_cost': 0.0, 'total_shares': 0.0}
-            
-            df.at[idx, 'realized_profit'] = profit
-            df.at[idx, 'estimated_tax'] = profit * tax_rate if profit > 0 else 0.0
-            df.at[idx, 'net_profit'] = profit - df.at[idx, 'estimated_tax']
+        
+        elif action == 'SELL':
+            if ticker in cost_basis and cost_basis[ticker]['total_shares'] > 0:
+                available_shares = cost_basis[ticker]['total_shares']
+                sell_quantity = min(quantity, available_shares)  # Cap at available
+                avg_cost = cost_basis[ticker]['total_cost'] / available_shares
+                profit = (price - avg_cost) * sell_quantity
+                
+                cost_basis[ticker]['total_shares'] -= sell_quantity
+                cost_basis[ticker]['total_cost'] = max(0, cost_basis[ticker]['total_cost'] - avg_cost * sell_quantity)
+                
+                if cost_basis[ticker]['total_shares'] <= 0:
+                    cost_basis[ticker] = {'total_cost': 0.0, 'total_shares': 0.0}
+                
+                df.at[idx, 'realized_profit'] = profit
+                df.at[idx, 'estimated_tax'] = profit * tax_rate if profit > 0 else 0.0
+                df.at[idx, 'net_profit'] = profit - df.at[idx, 'estimated_tax']
+        # else: SELL with no cost basis - profit stays 0 (correct default)
     # else: SELL with no cost basis - profit stays 0 (correct default)
     
     df['cumulative_net_profit'] = df['net_profit'].cumsum()
