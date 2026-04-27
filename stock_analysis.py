@@ -35,6 +35,9 @@ def get_stock_data(ticker, start_date, end_date):
         stock_data = yf.download(ticker, start=start_date, end=end_date, progress=False)
         if stock_data.empty:
             return None
+        # Flatten MultiIndex columns from newer yfinance versions
+        if isinstance(stock_data.columns, pd.MultiIndex):
+            stock_data.columns = stock_data.columns.get_level_values(0)
         return stock_data
     except Exception:
         return None
@@ -68,10 +71,12 @@ def build_analysis_summary(ticker_data):
         if isinstance(daily_returns, pd.DataFrame):
             daily_returns = daily_returns.iloc[:, 0]
         daily_returns = pd.to_numeric(daily_returns, errors='coerce').dropna()
-        volatility = daily_returns.std() if not daily_returns.empty else 0.0
-        if isinstance(volatility, pd.Series):
-            volatility = volatility.iloc[0] if not volatility.empty else 0.0
-        annualized_volatility = float(volatility) * (252 ** 0.5) * 100 if volatility else 0.0
+
+        try:
+            volatility = float(daily_returns.std()) if not daily_returns.empty else 0.0
+        except (TypeError, ValueError):
+            volatility = 0.0
+        annualized_volatility = volatility * (252 ** 0.5) * 100
         drawdown_pct = ((current_price - high_price) / high_price) * 100 if high_price else 0.0
         trend_vs_average = ((current_price - average_price) / average_price) * 100 if average_price else 0.0
 

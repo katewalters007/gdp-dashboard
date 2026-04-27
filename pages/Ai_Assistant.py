@@ -386,6 +386,7 @@ def get_snapshot():
             'selected_tickers': [],
             'stocks': [],
             'top_pick': None,
+            'history': {},
         },
     )
 
@@ -836,6 +837,11 @@ if 'offline_ai_messages' not in st.session_state:
     ]
 
 pending_prompt = st.session_state.pop('ai_quick_prompt', None)
+
+# Prevent duplicate processing
+messages = st.session_state.get('offline_ai_messages', [])
+if pending_prompt and messages and messages[-1].get('content') == pending_prompt:
+    pending_prompt = None
 
 # Display all messages
 for message in st.session_state.get('offline_ai_messages', []):

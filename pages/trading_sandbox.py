@@ -126,6 +126,31 @@ def backtest_strategy(data, strategy_type, params, initial_cash=10000):
 # Main UI
 st.header('Trading Strategy Sandbox')
 
+if 'edit_strategy' in st.session_state:
+    with st.container(border=True):
+        strat = st.session_state.edit_strategy
+        st.subheader(f'Editing: {strat["name"]}')
+        edit_name = st.text_input('Name', value=strat['name'], key='edit_name')
+        edit_desc = st.text_area('Description', value=strat['description'], key='edit_desc')
+        edit_type = st.selectbox('Type', list(PREDEFINED_STRATEGIES.keys()), index=list(PREDEFINED_STRATEGIES.keys()).index(strat['strategy_type']), key='edit_type')
+        edit_params = {}
+        base_params = PREDEFINED_STRATEGIES[edit_type]['parameters']
+        for param, default in base_params.items():
+            current_val = strat['parameters'].get(param, default)
+            edit_params[param] = st.number_input(f'{param.replace("_", " ").title()}', value=current_val, key=f'edit_{param}')
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button('Update Strategy'):
+                update_user_strategy(strat['id'], current_user['id'], edit_name, edit_desc, edit_type, edit_params)
+                st.success('Strategy updated!')
+                del st.session_state.edit_strategy
+                st.rerun()
+        with col2:
+            if st.button('Cancel'):
+                del st.session_state.edit_strategy
+                st.rerun()
+
 col1, col2 = st.columns([1, 2])
 
 with col1:
@@ -155,19 +180,19 @@ with col1:
         user_strategies = get_user_strategies(current_user['id'])
         if user_strategies:
             for strat in user_strategies:
-                col1, col2, col3 = st.columns([3, 1, 1])
-                with col1:
+                strat_col1, strat_col2, strat_col3 = st.columns([3, 1, 1])
+                with strat_col1:
                     if st.button(f'Select {strat["name"]}', key=f'user_{strat["id"]}'):
                         selected_strategy = strat['strategy_type']
                         strategy_params = strat['parameters'].copy()
                         st.session_state.selected_strategy = selected_strategy
                         st.session_state.strategy_params = strategy_params
                         st.rerun()
-                with col2:
+                with strat_col2:
                     if st.button('Edit', key=f'edit_{strat["id"]}'):
                         st.session_state.edit_strategy = strat
                         st.rerun()
-                with col3:
+                with strat_col3:
                     if st.button('Delete', key=f'del_{strat["id"]}'):
                         delete_user_strategy(strat['id'], current_user['id'])
                         st.success('Strategy deleted!')
@@ -190,30 +215,6 @@ with col1:
                 st.rerun()
 
 # Handle editing
-if 'edit_strategy' in st.session_state:
-    strat = st.session_state.edit_strategy
-    st.subheader(f'Editing: {strat["name"]}')
-    edit_name = st.text_input('Name', value=strat['name'], key='edit_name')
-    edit_desc = st.text_area('Description', value=strat['description'], key='edit_desc')
-    edit_type = st.selectbox('Type', list(PREDEFINED_STRATEGIES.keys()), index=list(PREDEFINED_STRATEGIES.keys()).index(strat['strategy_type']), key='edit_type')
-    edit_params = {}
-    base_params = PREDEFINED_STRATEGIES[edit_type]['parameters']
-    for param, default in base_params.items():
-        current_val = strat['parameters'].get(param, default)
-        edit_params[param] = st.number_input(f'{param.replace("_", " ").title()}', value=current_val, key=f'edit_{param}')
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button('Update Strategy'):
-            update_user_strategy(strat['id'], current_user['id'], edit_name, edit_desc, edit_type, edit_params)
-            st.success('Strategy updated!')
-            del st.session_state.edit_strategy
-            st.rerun()
-    with col2:
-        if st.button('Cancel'):
-            del st.session_state.edit_strategy
-            st.rerun()
-
 # Get selected strategy from session
 if 'selected_strategy' in st.session_state:
     selected_strategy = st.session_state.selected_strategy
@@ -253,7 +254,8 @@ with col2:
                     if not trades_df.empty:
                         st.dataframe(trades_df)
                     else:
-                        st.info('No trades executed in this period.')
+                        st.info('No trades were triggered by this strategy in the selected period. '
+                                'Try adjusting the parameters or extending the date range.')
                 else:
                     st.error('Strategy not supported.')
     else:

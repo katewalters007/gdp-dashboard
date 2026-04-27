@@ -82,15 +82,18 @@ def apply_page_theme(page_title, subtitle=None):
     st.divider()
 
 
-def render_top_nav(show_analytics=True, show_sandbox=True):
-    left, c1, c2, c3, c4, right = st.columns([0.8, 1, 1, 1, 1, 0.8])
+def render_top_nav(show_analytics=True, show_sandbox=True, show_ai=True):
+    left, c1, c2, c3, c4, c5, right = st.columns([0.6, 1, 1, 1, 1, 1, 0.6])
     with c1:
-        st.page_link("streamlit_app.py", label="Stock Tracker")
+        st.page_link("streamlit_app.py", label="📈 Stock Tracker")
     with c2:
-        st.page_link("pages/Login.py", label="Login")
+        st.page_link("pages/Login.py", label="🔑 Login")
     with c3:
         if show_analytics:
-            st.page_link("pages/post_login_analytics.py", label="Analytics")
+            st.page_link("pages/post_login_analytics.py", label="📊 Analytics")
     with c4:
         if show_sandbox:
-            st.page_link("pages/trading_sandbox.py", label="Trading Sandbox")
+            st.page_link("pages/trading_sandbox.py", label="🧪 Sandbox")
+    with c5:
+        if show_ai:
+            st.page_link("pages/Ai_Assistant.py", label="🤖 AI Assistant")

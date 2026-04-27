@@ -18,6 +18,8 @@ from user_backend import (
     delete_transaction,
 )
 
+init_db()
+
 # Set the title and favicon that appear in the Browser's tab bar.
 st.set_page_config(
     page_title='Stock Tracker',
@@ -436,16 +438,6 @@ def get_stock_news(ticker):
         except:
             pass
     
-    # Return mock data if no real data available (for testing)
-    if len(formatted_news) == 0:
-        formatted_news = [
-            {
-                'title': f'{ticker} Market Update',
-                'link': f'https://finance.yahoo.com/quote/{ticker}',
-                'source': 'Market Data'
-            }
-        ]
-    
     return formatted_news
 
 # -----------------------------------------------------------------------------
@@ -533,6 +525,10 @@ if ticker_input:
 else:
     selected_tickers = []
 
+if current_user and selected_tickers != st.session_state.get('last_saved_tickers'):
+    save_watchlist(current_user['id'], selected_tickers)
+    st.session_state.last_saved_tickers = selected_tickers
+
 if not len(selected_tickers):
     st.warning("Enter at least one stock ticker")
 
@@ -594,31 +590,6 @@ if not combined_data.empty:
     if stats_data:
         stats_df = pd.DataFrame(stats_data)
         st.dataframe(stats_df, width='stretch')
-
-    if current_user:
-            triggered_alerts = []
-            for ticker in selected_tickers:
-                entry = watchlist_entries_map.get(ticker, {})
-                if ticker not in ticker_data:
-                    continue
-
-                current_price = float(ticker_data[ticker]['Close'].iloc[-1].item())
-                buy_alert = entry.get('buy_alert_price')
-                sell_alert = entry.get('sell_alert_price')
-
-                if buy_alert is not None and current_price <= float(buy_alert):
-                    triggered_alerts.append(
-                        f"{ticker}: current price ${current_price:.2f} is at or below buy alert ${float(buy_alert):.2f}"
-                    )
-                if sell_alert is not None and current_price >= float(sell_alert):
-                    triggered_alerts.append(
-                        f"{ticker}: current price ${current_price:.2f} is at or above sell alert ${float(sell_alert):.2f}"
-                    )
-
-            if triggered_alerts:
-                st.subheader('Triggered Alerts')
-                for alert_message in triggered_alerts:
-                    st.warning(alert_message)
 
 with watchlist_tab:
     st.subheader('Watchlist Notes & Alerts')
@@ -825,16 +796,8 @@ with transaction_tab:
         if stats_data:
             stats_df = pd.DataFrame(stats_data)
             st.dataframe(stats_df, width='stretch')
-        else:
-            st.session_state.analysis_snapshot = {
-                'generated_at': datetime.now().isoformat(),
-                'start_date': str(start_date),
-                'end_date': str(end_date),
-                'selected_tickers': selected_tickers,
-                'stocks': [],
-                'top_pick': None,
-            }
-            st.error('Could not fetch data for any of the selected tickers. Please check the ticker symbols.')
+    else:
+        st.info("Add tickers on the main page to see performance statistics.")
 
 # Sidebar for Latest Stock News
 with st.sidebar:
