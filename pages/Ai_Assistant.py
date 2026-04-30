@@ -420,87 +420,120 @@ def get_ticker_mentions(prompt, stocks):
     return [stock for stock in stocks if stock['ticker'] in prompt_upper]
 
 
-def build_recommendation(snapshot):
-    """Build a recommendation for the best stock from the snapshot."""
+def build_recommendation(snapshot, context_str=""):
+    """Build a conversational recommendation for the best stock."""
     if not snapshot or not snapshot.get('stocks'):
-        return 'I do not have valid stock data yet. Run the advisor to load historical prices first.'
+        return 'I need stock data first! Run the advisor to load historical prices.'
 
     try:
         stocks = snapshot['stocks']
         top_stock = stocks[0]
         runner_up = stocks[1] if len(stocks) > 1 else None
         
+        # Add conversational context
+        context_prefix = ""
+        if "avoid" in context_str.lower() or "worst" in context_str.lower():
+            context_prefix = "Switching gears to the positive side - "
+        elif "compare" in context_str.lower():
+            context_prefix = "Building on that comparison, "
+        
         response = [
-            f"Based on the selected historical window, {top_stock['ticker']} is the strongest purchase candidate from this list.",
+            f"{context_prefix}Looking at the historical data from {snapshot.get('start_date')} to {snapshot.get('end_date')}, "
+            f"{top_stock['ticker']} stands out as the strongest candidate in this analysis.",
             describe_stock(top_stock),
         ]
 
         if runner_up:
             score_gap = top_stock['score'] - runner_up['score']
             response.append(
-                f"It ranks ahead of {runner_up['ticker']} by {score_gap:.2f} points because it combines stronger momentum with a better risk-adjusted profile in this time window."
+                f"It outperforms {runner_up['ticker']} by {score_gap:.2f} points, thanks to its superior momentum "
+                f"and better risk-adjusted returns during this time period."
             )
 
         response.append(
-            "This assistant is educational only. It ranks the displayed stocks from recent price behavior, not full valuation, earnings quality, or macro risk."
+            "Remember, this is based purely on historical price behavior - not fundamental analysis, "
+            "earnings, or future predictions. What aspect would you like me to explain further?"
         )
         return "\n\n".join(response)
     except Exception as e:
-        return f"Unable to build recommendation: {str(e)}"
+        return f"I had trouble generating that recommendation: {str(e)}"
 
 
-def build_avoid_recommendation(snapshot):
-    """Build a recommendation for the worst stock to avoid from the snapshot."""
+def build_avoid_recommendation(snapshot, context_str=""):
+    """Build a conversational recommendation for the worst stock to avoid."""
     if not snapshot or not snapshot.get('stocks'):
-        return 'I do not have valid stock data yet. Run the advisor to load historical prices first.'
+        return 'I need stock data first! Run the advisor to load historical prices.'
 
     try:
         stocks = snapshot['stocks']
         worst_stock = stocks[-1]  # Last in the list is the worst
         second_worst = stocks[-2] if len(stocks) > 1 else None
         
+        # Add conversational context
+        context_prefix = ""
+        if "buy" in context_str.lower() or "best" in context_str.lower():
+            context_prefix = "On the flip side, "
+        elif "compare" in context_str.lower():
+            context_prefix = "Continuing with that comparison, "
+        
         response = [
-            f"Based on the selected historical window, {worst_stock['ticker']} is the weakest performer from this list and should be avoided.",
+            f"{context_prefix}Analyzing the historical performance from {snapshot.get('start_date')} to {snapshot.get('end_date')}, "
+            f"{worst_stock['ticker']} has been the weakest performer in this group.",
             describe_stock(worst_stock),
         ]
 
         if second_worst:
             score_gap = second_worst['score'] - worst_stock['score']
             response.append(
-                f"It ranks below {second_worst['ticker']} by {score_gap:.2f} points due to weaker momentum and poorer risk-adjusted performance in this time window."
+                f"It trails {second_worst['ticker']} by {score_gap:.2f} points, showing weaker momentum "
+                f"and less favorable risk-adjusted returns during this period."
             )
 
         response.append(
-            "This assistant is educational only. It ranks the displayed stocks from recent price behavior, not full valuation, earnings quality, or macro risk."
+            "This analysis focuses on historical price patterns only. Market conditions can change, "
+            f"and {worst_stock['ticker']} might recover. Would you like me to compare it to another stock or explain the methodology?"
         )
         return "\n\n".join(response)
     except Exception as e:
-        return f"Unable to build avoid recommendation: {str(e)}"
+        return f"I had trouble with that analysis: {str(e)}"
 
 
-def build_comparison_response(stocks):
-    """Compare multiple stocks mentioned in the prompt."""
+def build_comparison_response(stocks, context_str=""):
+    """Compare multiple stocks with conversational context."""
     try:
         if not stocks:
-            return "No stocks were mentioned in your question. Please specify ticker symbols to compare."
+            return "I didn't catch any specific stock tickers in your question. Could you mention which stocks you'd like me to compare?"
         
         sorted_stocks = sorted(stocks, key=lambda item: item['score'], reverse=True)
-        lines = [f"Among the stocks mentioned, {sorted_stocks[0]['ticker']} looks strongest right now."]
         
-        for stock in sorted_stocks:
+        # Add conversational context
+        context_prefix = ""
+        if "buy" in context_str.lower() or "recommend" in context_str.lower():
+            context_prefix = "Comparing your options, "
+        elif "avoid" in context_str.lower() or "worst" in context_str.lower():
+            context_prefix = "Looking at the comparison, "
+        
+        lines = [f"{context_prefix}Among these {len(stocks)} stocks, {sorted_stocks[0]['ticker']} has the strongest historical performance."]
+        
+        for i, stock in enumerate(sorted_stocks, 1):
+            rank_indicator = " (best)" if i == 1 else " (worst)" if i == len(sorted_stocks) else ""
             lines.append(
-                f"{stock['ticker']}: score {stock['score']:.2f}, return {format_percent(stock['percent_change'])}, volatility {format_percent(stock['volatility_pct'])}, drawdown {format_percent(stock['drawdown_pct'])}."
+                f"{i}. {stock['ticker']}{rank_indicator}: {format_percent(stock['percent_change'])} return, "
+                f"{format_percent(stock['volatility_pct'])} volatility, {format_percent(stock['drawdown_pct'])} max drawdown."
             )
-        return "\n\n".join(lines)
+        
+        lines.append(f"\nThe ranking is based on a composite score considering return, risk, and trend strength. Would you like me to dive deeper into any of these stocks or explain the methodology?")
+        
+        return "\n".join(lines)
     except Exception as e:
-        return f"Unable to compare stocks: {str(e)}"
+        return f"I had trouble making that comparison: {str(e)}. Could you try mentioning the specific stock tickers?"
 
 
-def build_risk_response(snapshot):
-    """Analyze risk profile of stocks in snapshot."""
+def build_risk_response(snapshot, context_str=""):
+    """Analyze risk profile with conversational context."""
     try:
         if not snapshot or not snapshot.get('stocks'):
-            return "I do not have enough data to rank risk yet."
+            return "I need stock data to analyze risk profiles."
 
         stocks = snapshot['stocks']
         if not stocks:
@@ -509,19 +542,38 @@ def build_risk_response(snapshot):
         riskiest = max(stocks, key=lambda item: item['volatility_pct'])
         steadiest = min(stocks, key=lambda item: item['volatility_pct'])
         
-        return (
-            f"The highest-volatility name is {riskiest['ticker']} at about {format_percent(riskiest['volatility_pct'])}, so it has shown the largest price swings. "
-            f"The steadiest name is {steadiest['ticker']} at about {format_percent(steadiest['volatility_pct'])}."
-        )
+        # Add conversational context
+        context_prefix = ""
+        if "buy" in context_str.lower() or "recommend" in context_str.lower():
+            context_prefix = "Speaking of risk considerations, "
+        elif "avoid" in context_str.lower() or "worst" in context_str.lower():
+            context_prefix = "Looking at the risk side of things, "
+        
+        response = [
+            f"{context_prefix}When it comes to price volatility in this historical window, "
+            f"{riskiest['ticker']} has shown the most dramatic swings at {format_percent(riskiest['volatility_pct'])} annualized volatility.",
+            f"On the steadier side, {steadiest['ticker']} has been more stable with {format_percent(steadiest['volatility_pct'])} volatility."
+        ]
+        
+        # Add educational context
+        if riskiest['volatility_pct'] > steadiest['volatility_pct'] * 2:
+            response.append(
+                f"That's quite a difference! Higher volatility can mean bigger potential gains but also bigger potential losses. "
+                f"Volatility here is measured as the standard deviation of daily returns annualized."
+            )
+        
+        response.append("Would you like me to explain how volatility affects returns or compare specific stocks?")
+        
+        return "\n\n".join(response)
     except Exception as e:
-        return f"Unable to analyze risk: {str(e)}"
+        return f"I had trouble analyzing the risk profiles: {str(e)}"
 
 
-def build_drawdown_response(snapshot):
-    """Analyze drawdown profiles of stocks in snapshot."""
+def build_drawdown_response(snapshot, context_str=""):
+    """Analyze drawdown profiles with conversational context."""
     try:
         if not snapshot or not snapshot.get('stocks'):
-            return "I do not have enough data to compare pullbacks yet."
+            return "I need stock data to analyze drawdowns."
 
         stocks = snapshot['stocks']
         if not stocks:
@@ -530,12 +582,31 @@ def build_drawdown_response(snapshot):
         closest_to_high = max(stocks, key=lambda item: item['drawdown_pct'])
         deepest_pullback = min(stocks, key=lambda item: item['drawdown_pct'])
         
-        return (
-            f"{closest_to_high['ticker']} is closest to its period high with a drawdown of {format_percent(closest_to_high['drawdown_pct'])}. "
-            f"{deepest_pullback['ticker']} has the deepest pullback at {format_percent(deepest_pullback['drawdown_pct'])}."
-        )
+        # Add conversational context
+        context_prefix = ""
+        if "risk" in context_str.lower() or "volatile" in context_str.lower():
+            context_prefix = "Building on the risk discussion, "
+        elif "performance" in context_str.lower():
+            context_prefix = "Looking at the recovery patterns, "
+        
+        response = [
+            f"{context_prefix}{closest_to_high['ticker']} is currently closest to its period high, "
+            f"with only a {format_percent(closest_to_high['drawdown_pct'])} pullback from its peak.",
+            f"{deepest_pullback['ticker']} experienced the most significant decline, dropping {format_percent(abs(deepest_pullback['drawdown_pct']))} from its high point."
+        ]
+        
+        # Add educational context
+        if abs(deepest_pullback['drawdown_pct']) > 20:
+            response.append(
+                f"That's a substantial pullback! Drawdown measures how far a stock has fallen from its highest point in the period. "
+                f"Large drawdowns can be concerning but also sometimes present buying opportunities."
+            )
+        
+        response.append("Drawdown is a key risk metric - it shows the maximum loss you would have experienced if you bought at the peak. Any particular stock you'd like me to analyze further?")
+        
+        return "\n\n".join(response)
     except Exception as e:
-        return f"Unable to analyze drawdowns: {str(e)}"
+        return f"I had trouble analyzing the drawdowns: {str(e)}"
 
 
 def get_stock_history(ticker, snapshot):
@@ -557,51 +628,136 @@ def compute_period_return(close_prices, lookback_days):
     return ((latest_price - earlier_price) / earlier_price) * 100
 
 
-def build_general_response(prompt, snapshot):
-    stocks = snapshot.get('stocks', [])
-    if not stocks:
-        return 'I do not have enough loaded data to answer that yet. Run the advisor first.'
+def build_count_response(snapshot, context_str=""):
+    """Provide conversational count/summary information."""
+    stock_count = len(snapshot['stocks'])
+    tickers = ', '.join([s['ticker'] for s in snapshot['stocks'][:5]])
+    if stock_count > 5:
+        tickers += f", and {stock_count - 5} more"
+    
+    # Add conversational context
+    context_prefix = ""
+    if "performance" in context_str.lower() or "how" in context_str.lower():
+        context_prefix = "To give you context, "
+    
+    response = [
+        f"{context_prefix}I have {stock_count} stocks loaded in the current analysis, covering the period from {snapshot.get('start_date')} to {snapshot.get('end_date')}.",
+        f"The stocks in your analysis include: {tickers}.",
+        f"The top performers so far are {snapshot['stocks'][0]['ticker']} with {format_percent(snapshot['stocks'][0]['percent_change'])} return, and {snapshot['stocks'][1]['ticker']} with {format_percent(snapshot['stocks'][1]['percent_change'])} return."
+    ]
+    
+    if stock_count > 10:
+        response.append("That's quite a watchlist! Would you like me to focus on a particular subset or give you an overall summary?")
+    
+    return "\n\n".join(response)
 
-    prompt_lower = prompt.lower()
+
+def build_performance_response(snapshot, context_str=""):
+    """Provide conversational performance analysis."""
+    if not snapshot.get('stocks'):
+        return "I need stock data to analyze performance."
+    
+    stocks = snapshot['stocks']
     top = stocks[0]
     bottom = stocks[-1]
     
-    # Try to understand what the user might be asking about
-    if any(word in prompt_lower for word in ['why', 'explain', 'how come', 'reason']):
-        return f"I rank stocks based on their historical price behavior over the selected time period. {top['ticker']} performed best with {format_percent(top['percent_change'])} return and {format_percent(top['volatility_pct'])} volatility, giving it the highest score. This is educational analysis only, not financial advice."
+    # Calculate some aggregate stats
+    avg_return = sum(s['percent_change'] for s in stocks) / len(stocks)
+    avg_vol = sum(s['volatility_pct'] for s in stocks) / len(stocks)
     
-    if any(word in prompt_lower for word in ['all', 'every', 'list all', 'show all']):
-        tickers = ', '.join(stock['ticker'] for stock in stocks)
-        return f"I have analyzed {len(stocks)} stocks: {tickers}. The top performer is {top['ticker']} with {format_percent(top['percent_change'])} return."
+    # Add conversational context
+    context_prefix = ""
+    if "count" in context_str.lower() or "how many" in context_str.lower():
+        context_prefix = "Building on that, "
+    elif "risk" in context_str.lower():
+        context_prefix = "Looking at the performance side, "
     
-    if any(word in prompt_lower for word in ['average', 'mean', 'typical']):
+    response = [
+        f"{context_prefix}The {len(stocks)} stocks in your analysis show quite varied performance over the {snapshot.get('start_date')} to {snapshot.get('end_date')} period.",
+        f"{top['ticker']} leads the pack with an impressive {format_percent(top['percent_change'])} return, while {bottom['ticker']} brings up the rear with {format_percent(bottom['percent_change'])}.",
+        f"On average, the stocks returned {format_percent(avg_return)} with {format_percent(avg_vol)} volatility."
+    ]
+    
+    # Add market context
+    if avg_return > 10:
+        response.append("That's been a strong period overall! The market environment seems to have been favorable.")
+    elif avg_return < -10:
+        response.append("This has been a challenging period for these stocks. Market conditions can change, though.")
+    
+    response.append("Would you like me to break this down by sector, compare specific stocks, or analyze the risk factors?")
+    
+    return "\n\n".join(response)
+
+
+def build_conversational_response(prompt, snapshot, context_str):
+    """Build a conversational response for unrecognized questions."""
+    prompt_lower = prompt.lower()
+    stocks = snapshot.get('stocks', [])
+    
+    # Try to understand what the user might be asking
+    if any(word in prompt_lower for word in ['why', 'explain', 'how come', 'reason', 'methodology']):
+        return (
+            "I analyze stocks based on their historical price behavior over the selected time period. "
+            "My scoring system considers three main factors:\n\n"
+            "1. **Return**: How much the stock has gained or lost\n"
+            "2. **Risk**: Measured by volatility (price swings) and drawdown (peak-to-trough decline)\n"
+            "3. **Trend**: How the stock performs relative to its own average price\n\n"
+            "This gives a balanced view of risk-adjusted performance. It's educational only - not financial advice! "
+            "What aspect would you like me to explain more about?"
+        )
+    
+    if any(word in prompt_lower for word in ['all', 'every', 'list all', 'show all', 'complete list']):
+        tickers = ', '.join([s['ticker'] for s in stocks])
+        return f"Here's your complete watchlist: {tickers}. That's {len(stocks)} stocks total. Which one would you like me to analyze in detail?"
+    
+    if any(word in prompt_lower for word in ['average', 'mean', 'typical', 'overall']):
         avg_return = sum(s['percent_change'] for s in stocks) / len(stocks)
         avg_vol = sum(s['volatility_pct'] for s in stocks) / len(stocks)
-        return f"The average return across all {len(stocks)} stocks is {format_percent(avg_return)}, with average volatility of {format_percent(avg_vol)}. {top['ticker']} is above average with {format_percent(top['percent_change'])} return."
+        return (
+            f"Across your {len(stocks)} stocks, the average return is {format_percent(avg_return)} "
+            f"with average volatility of {format_percent(avg_vol)}. "
+            f"The best performer ({stocks[0]['ticker']}) beats the average by {format_percent(stocks[0]['percent_change'] - avg_return)}, "
+            f"while the worst ({stocks[-1]['ticker']}) lags by {format_percent(avg_return - stocks[-1]['percent_change'])}. "
+            "Would you like me to identify which stocks are above/below average?"
+        )
     
-    if any(word in prompt_lower for word in ['help', 'what can you', 'commands', 'questions']):
-        return "I can help you analyze stock performance! Try asking: 'which stock should I buy?', 'what should I avoid?', 'compare AAPL vs MSFT', 'how risky is NVDA?', 'what's the drawdown for TSLA?', or 'how many stocks are loaded?'"
+    if any(word in prompt_lower for word in ['help', 'what can you', 'commands', 'questions', 'capabilities']):
+        return (
+            "I'm here to help you analyze your stock watchlist! I can:\n\n"
+            "• **Recommend** the best/worst stocks to buy/avoid\n"
+            "• **Compare** multiple stocks side-by-side\n"
+            "• **Analyze risk** and volatility patterns\n"
+            "• **Explain drawdowns** and recovery patterns\n"
+            "• **Give performance summaries** and trends\n"
+            "• **Answer questions** about individual stocks\n\n"
+            "Just ask me in natural language! For example: 'which stock should I buy?', 'compare AAPL and MSFT', "
+            "'how risky is NVDA?', or 'what's the worst performer?'. What would you like to know?"
+        )
     
-    # Default response with more conversational tone
-    tickers = ', '.join(stock['ticker'] for stock in stocks[:5])
-    if len(stocks) > 5:
-        tickers += f", and {len(stocks) - 5} more"
+    # Default conversational response
+    top_stocks = ', '.join([s['ticker'] for s in stocks[:3]])
     
-    response_options = [
-        f"I've analyzed {len(stocks)} stocks from {snapshot.get('start_date')} to {snapshot.get('end_date')}. {top['ticker']} is the top performer with {format_percent(top['percent_change'])} return, while {bottom['ticker']} has the lowest at {format_percent(bottom['percent_change'])}. The stocks include: {tickers}. What would you like to know about them?",
+    responses = [
+        f"I'm analyzing {len(stocks)} stocks from your watchlist covering {snapshot.get('start_date')} to {snapshot.get('end_date')}. "
+        f"{stocks[0]['ticker']} is leading with {format_percent(stocks[0]['percent_change'])} return. "
+        f"Your top performers so far are {top_stocks}. What would you like me to explore about these stocks?",
         
-        f"Based on the historical data, {top['ticker']} ranks highest with a {top['score']:.2f} score and {format_percent(top['percent_change'])} return. {bottom['ticker']} is at the bottom with {format_percent(bottom['percent_change'])} performance. I have data for: {tickers}. Ask me about specific stocks, comparisons, or risk analysis!",
+        f"Based on the historical data, I can see some interesting patterns in your {len(stocks)} stocks. "
+        f"{stocks[0]['ticker']} has been the strongest with {format_percent(stocks[0]['percent_change'])} performance. "
+        f"I can help you understand the risk factors, compare stocks, or identify trends. What interests you most?",
         
-        f"I'm looking at {len(stocks)} stocks over the period from {snapshot.get('start_date')} to {snapshot.get('end_date')}. The strongest is {top['ticker']} (up {format_percent(top['percent_change'])}), and the weakest is {bottom['ticker']} (down {format_percent(bottom['percent_change'])}). Available stocks: {tickers}. Try asking about volatility, drawdowns, or recommendations."
+        f"I've processed the price data for your watchlist. The period from {snapshot.get('start_date')} to {snapshot.get('end_date')} "
+        f"shows {stocks[0]['ticker']} as the top performer. I can dive deeper into volatility analysis, "
+        f"drawdown patterns, or help you make comparisons. What's your main question?"
     ]
     
     # Use prompt hash for consistent but varied responses
     import hashlib
-    variation_index = int(hashlib.md5(prompt.encode()).hexdigest(), 16) % len(response_options)
-    return response_options[variation_index]
+    variation_index = int(hashlib.md5(prompt.encode()).hexdigest(), 16) % len(responses)
+    return responses[variation_index]
 
 
-def build_stock_response(stock, prompt, snapshot):
+def build_stock_response(stock, prompt, snapshot, context_str=""):
     prompt_lower = prompt.lower()
     history = get_stock_history(stock['ticker'], snapshot)
     latest = stock.get('current_price')
@@ -662,7 +818,7 @@ def build_stock_response(stock, prompt, snapshot):
 
 
 def answer_prompt(prompt, snapshot):
-    """Generate AI response to user prompt based on loaded stock snapshot."""
+    """Generate conversational AI response based on loaded stock snapshot and chat context."""
     try:
         if not prompt or not isinstance(prompt, str):
             return "Please enter a valid question."
@@ -671,25 +827,34 @@ def answer_prompt(prompt, snapshot):
 
         if not snapshot or not snapshot.get('stocks'):
             return (
-                'Run the historical advisor first so I have a ranked watchlist to analyze. '
-                'I score stocks from past price behavior instead of using an external AI API.'
+                'I need some stock data to work with! Run the historical advisor first to load a watchlist, '
+                'then I can help you analyze the performance, risk, and trends.'
             )
+
+        # Get conversation context
+        messages = st.session_state.get('offline_ai_messages', [])
+        recent_context = []
+        for msg in messages[-6:]:  # Look at last 6 messages for context
+            if msg['role'] == 'user':
+                recent_context.append(f"User asked: {msg['content']}")
+            elif msg['role'] == 'assistant':
+                recent_context.append(f"I said: {msg['content'][:100]}...")
+
+        context_str = " | ".join(recent_context[-3:]) if recent_context else ""
 
         try:
             mentioned_stocks = get_ticker_mentions(prompt, snapshot['stocks'])
         except Exception:
             mentioned_stocks = []
 
-        # Expanded keyword detection for better natural language understanding
-        # Best/buy recommendations
+        # Enhanced keyword detection with conversational context
         buy_keywords = [
             'which stock', 'what should i buy', 'purchase', 'buy', 'best stock', 'recommend',
             'what to buy', 'what to purchase', 'best performing', 'top stock', 'strongest stock',
             'what is best', 'what should i invest in', 'what to invest in', 'good stocks',
             'best choice', 'top performer', 'highest ranked', 'number one', 'best one'
         ]
-        
-        # Worst/avoid recommendations  
+
         avoid_keywords = [
             'worst stock', 'avoid', 'not purchase', 'should not buy', 'worst', 'bad stock', 'sell',
             'worst performing', 'bad stocks', 'should avoid', 'stay away from', 'not buy',
@@ -697,74 +862,63 @@ def answer_prompt(prompt, snapshot):
             'what not to buy', 'what to avoid', 'what to sell', 'what should i sell',
             'what is worst', 'bad performers', 'underperformers', 'worst choice'
         ]
-        
-        # Risk/volatility questions
+
         risk_keywords = [
             'risk', 'risky', 'volatile', 'volatility', 'how risky', 'risk level', 'volatility level',
             'price swings', 'unstable', 'stable', 'how volatile', 'risk assessment', 'volatility analysis'
         ]
-        
-        # Drawdown/pullback questions
+
         drawdown_keywords = [
             'drawdown', 'pullback', 'near high', 'below high', 'peak', 'low', 'how much down',
             'recovery', 'from high', 'peak to trough', 'decline', 'drop', 'fall', 'dip'
         ]
-        
-        # Comparison questions
+
         if any(keyword in prompt_lower for keyword in ['compare', 'vs', 'versus', 'compared to', 'versus', 'vs.']) and len(mentioned_stocks) >= 2:
-            return build_comparison_response(mentioned_stocks)
+            return build_comparison_response(mentioned_stocks, context_str)
 
-        # Buy/recommendation questions
         if any(keyword in prompt_lower for keyword in buy_keywords):
-            return build_recommendation(snapshot)
+            return build_recommendation(snapshot, context_str)
 
-        # Avoid/worst questions
         if any(keyword in prompt_lower for keyword in avoid_keywords):
-            return build_avoid_recommendation(snapshot)
+            return build_avoid_recommendation(snapshot, context_str)
 
-        # Risk questions
         if any(keyword in prompt_lower for keyword in risk_keywords):
-            return build_risk_response(snapshot)
+            return build_risk_response(snapshot, context_str)
 
-        # Drawdown questions
         if any(keyword in prompt_lower for keyword in drawdown_keywords):
-            return build_drawdown_response(snapshot)
-
-        if len(mentioned_stocks) == 1:
-            return build_stock_response(mentioned_stocks[0], prompt, snapshot)
+            return build_drawdown_response(snapshot, context_str)
 
         if len(mentioned_stocks) > 1:
-            return build_comparison_response(mentioned_stocks)
+            return build_comparison_response(mentioned_stocks, context_str)
 
-        # Count/summary questions
         count_keywords = [
             'how many', 'how much', 'number of', 'total', 'count', 'how many stocks',
             'what stocks', 'list of stocks', 'which stocks', 'what are the stocks',
             'stock count', 'total stocks', 'how many do you have'
         ]
         if any(keyword in prompt_lower for keyword in count_keywords):
-            return f"I currently have {len(snapshot['stocks'])} stocks loaded in the snapshot covering {snapshot.get('start_date')} through {snapshot.get('end_date')}. The top performers are {', '.join([s['ticker'] for s in snapshot['stocks'][:3]])}."
+            return build_count_response(snapshot, context_str)
 
-        # Performance/summary questions
         performance_keywords = [
             'performance', 'how are they doing', 'how did they do', 'summary', 'overview',
             'how have they performed', 'results', 'what happened', 'how are the stocks doing'
         ]
         if any(keyword in prompt_lower for keyword in performance_keywords):
-            top = snapshot['stocks'][0]
-            return f"The stocks have shown mixed performance over the period. {top['ticker']} is the top performer with {format_percent(top['percent_change'])} return, while {snapshot['stocks'][-1]['ticker']} has the lowest return at {format_percent(snapshot['stocks'][-1]['percent_change'])}."
+            return build_performance_response(snapshot, context_str)
 
-        # Price/current value questions
         price_keywords = [
             'price', 'current price', 'how much', 'worth', 'value', 'current value',
             'trading at', 'last price', 'current trading price'
         ]
         if any(keyword in prompt_lower for keyword in price_keywords) and len(mentioned_stocks) == 1:
-            return build_stock_response(mentioned_stocks[0], prompt, snapshot)
+            return build_stock_response(mentioned_stocks[0], prompt, snapshot, context_str)
 
-        return build_general_response(prompt, snapshot)
+        if len(mentioned_stocks) == 1:
+            return build_stock_response(mentioned_stocks[0], prompt, snapshot, context_str)
+
+        return build_conversational_response(prompt, snapshot, context_str)
     except Exception as e:
-        return f"I encountered an issue responding to your question: {str(e)}"
+        return f"I ran into an issue analyzing that question: {str(e)}. Could you try rephrasing it?"
 
 
 snapshot = get_snapshot()
