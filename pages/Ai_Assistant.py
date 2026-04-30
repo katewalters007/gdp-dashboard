@@ -8,6 +8,7 @@ from stock_analysis import (
     get_bulk_stock_data,
     normalize_tickers,
 )
+from user_backend import get_watchlist
 
 st.set_page_config(
     page_title='AI Stock Assistant',
@@ -661,6 +662,16 @@ snapshot = get_snapshot()
 def build_watchlist_input(selection):
     if selection == 'Custom':
         default_tickers = st.session_state.get('advisor_custom_tickers', ['AAPL', 'MSFT', 'NVDA', 'TSLA'])
+    elif selection == 'My Watchlist':
+        current_user = st.session_state.get('auth_user')
+        if current_user:
+            watchlist = get_watchlist(current_user['id'])
+            if watchlist:
+                default_tickers = watchlist
+            else:
+                default_tickers = ['AAPL', 'MSFT', 'NVDA', 'TSLA']  # fallback if watchlist empty
+        else:
+            default_tickers = ['AAPL', 'MSFT', 'NVDA', 'TSLA']  # fallback
     else:
         default_tickers = DEFAULT_STOCK_UNIVERSES[selection]
     return ', '.join(default_tickers)
@@ -733,15 +744,20 @@ with st.container(border=True):
     control_col1, control_col2, control_col3 = st.columns([1.2, 1, 1])
 
     with control_col1:
+        current_user = st.session_state.get('auth_user')
+        universe_options = list(DEFAULT_STOCK_UNIVERSES.keys()) + ['Custom']
+        if current_user:
+            universe_options.insert(0, 'My Watchlist')
         watchlist_choice = st.selectbox(
             'Stock universe',
-            options=list(DEFAULT_STOCK_UNIVERSES.keys()) + ['Custom'],
+            options=universe_options,
             index=0,
         )
         tickers_value = st.text_input(
             'Tickers to rank',
             value=build_watchlist_input(watchlist_choice),
             placeholder='e.g., AAPL, MSFT, NVDA, TSLA',
+            disabled=(watchlist_choice == 'My Watchlist'),
         )
         st.session_state.advisor_custom_tickers = normalize_tickers(tickers_value)
 
