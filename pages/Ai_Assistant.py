@@ -562,23 +562,43 @@ def build_general_response(prompt, snapshot):
     if not stocks:
         return 'I do not have enough loaded data to answer that yet. Run the advisor first.'
 
+    prompt_lower = prompt.lower()
     top = stocks[0]
     bottom = stocks[-1]
-    tickers = ', '.join(stock['ticker'] for stock in stocks[:8])
-    if len(stocks) > 8:
-        tickers += ', ...'
-
-    # Add some variety to responses to avoid repetition
-    response_variations = [
-        f"I am answering from the historical snapshot loaded for {len(stocks)} tickers from {snapshot.get('start_date')} to {snapshot.get('end_date')}. The top-ranked name is {top['ticker']} with a score of {top['score']:.2f}, return {format_percent(top['percent_change'])}, and volatility {format_percent(top['volatility_pct'])}. The lowest-ranked name is {bottom['ticker']} with return {format_percent(bottom['percent_change'])}. Currently analyzed tickers include: {tickers}. Ask about a specific ticker, comparison, volatility, drawdown, or overall ranking.",
-        f"Based on the loaded analysis covering {len(stocks)} stocks from {snapshot.get('start_date')} to {snapshot.get('end_date')}, {top['ticker']} leads with a {top['score']:.2f} score and {format_percent(top['percent_change'])} return. At the bottom is {bottom['ticker']} with {format_percent(bottom['percent_change'])} performance. The full list includes: {tickers}. Try asking about specific stocks or comparisons.",
-        f"From the {len(stocks)} stocks analyzed between {snapshot.get('start_date')} and {snapshot.get('end_date')}, {top['ticker']} ranks highest with {format_percent(top['percent_change'])} return and {format_percent(top['volatility_pct'])} volatility. {bottom['ticker']} shows the lowest return at {format_percent(bottom['percent_change'])}. Available stocks: {tickers}. What would you like to know about these stocks?"
+    
+    # Try to understand what the user might be asking about
+    if any(word in prompt_lower for word in ['why', 'explain', 'how come', 'reason']):
+        return f"I rank stocks based on their historical price behavior over the selected time period. {top['ticker']} performed best with {format_percent(top['percent_change'])} return and {format_percent(top['volatility_pct'])} volatility, giving it the highest score. This is educational analysis only, not financial advice."
+    
+    if any(word in prompt_lower for word in ['all', 'every', 'list all', 'show all']):
+        tickers = ', '.join(stock['ticker'] for stock in stocks)
+        return f"I have analyzed {len(stocks)} stocks: {tickers}. The top performer is {top['ticker']} with {format_percent(top['percent_change'])} return."
+    
+    if any(word in prompt_lower for word in ['average', 'mean', 'typical']):
+        avg_return = sum(s['percent_change'] for s in stocks) / len(stocks)
+        avg_vol = sum(s['volatility_pct'] for s in stocks) / len(stocks)
+        return f"The average return across all {len(stocks)} stocks is {format_percent(avg_return)}, with average volatility of {format_percent(avg_vol)}. {top['ticker']} is above average with {format_percent(top['percent_change'])} return."
+    
+    if any(word in prompt_lower for word in ['help', 'what can you', 'commands', 'questions']):
+        return "I can help you analyze stock performance! Try asking: 'which stock should I buy?', 'what should I avoid?', 'compare AAPL vs MSFT', 'how risky is NVDA?', 'what's the drawdown for TSLA?', or 'how many stocks are loaded?'"
+    
+    # Default response with more conversational tone
+    tickers = ', '.join(stock['ticker'] for stock in stocks[:5])
+    if len(stocks) > 5:
+        tickers += f", and {len(stocks) - 5} more"
+    
+    response_options = [
+        f"I've analyzed {len(stocks)} stocks from {snapshot.get('start_date')} to {snapshot.get('end_date')}. {top['ticker']} is the top performer with {format_percent(top['percent_change'])} return, while {bottom['ticker']} has the lowest at {format_percent(bottom['percent_change'])}. The stocks include: {tickers}. What would you like to know about them?",
+        
+        f"Based on the historical data, {top['ticker']} ranks highest with a {top['score']:.2f} score and {format_percent(top['percent_change'])} return. {bottom['ticker']} is at the bottom with {format_percent(bottom['percent_change'])} performance. I have data for: {tickers}. Ask me about specific stocks, comparisons, or risk analysis!",
+        
+        f"I'm looking at {len(stocks)} stocks over the period from {snapshot.get('start_date')} to {snapshot.get('end_date')}. The strongest is {top['ticker']} (up {format_percent(top['percent_change'])}), and the weakest is {bottom['ticker']} (down {format_percent(bottom['percent_change'])}). Available stocks: {tickers}. Try asking about volatility, drawdowns, or recommendations."
     ]
     
-    # Use a simple hash of the prompt to select different response variations
+    # Use prompt hash for consistent but varied responses
     import hashlib
-    variation_index = int(hashlib.md5(prompt.encode()).hexdigest(), 16) % len(response_variations)
-    return response_variations[variation_index]
+    variation_index = int(hashlib.md5(prompt.encode()).hexdigest(), 16) % len(response_options)
+    return response_options[variation_index]
 
 
 def build_stock_response(stock, prompt, snapshot):
@@ -660,19 +680,54 @@ def answer_prompt(prompt, snapshot):
         except Exception:
             mentioned_stocks = []
 
-        if any(keyword in prompt_lower for keyword in ['compare', 'vs', 'versus']) and len(mentioned_stocks) >= 2:
+        # Expanded keyword detection for better natural language understanding
+        # Best/buy recommendations
+        buy_keywords = [
+            'which stock', 'what should i buy', 'purchase', 'buy', 'best stock', 'recommend',
+            'what to buy', 'what to purchase', 'best performing', 'top stock', 'strongest stock',
+            'what is best', 'what should i invest in', 'what to invest in', 'good stocks',
+            'best choice', 'top performer', 'highest ranked', 'number one', 'best one'
+        ]
+        
+        # Worst/avoid recommendations  
+        avoid_keywords = [
+            'worst stock', 'avoid', 'not purchase', 'should not buy', 'worst', 'bad stock', 'sell',
+            'worst performing', 'bad stocks', 'should avoid', 'stay away from', 'not buy',
+            'avoid buying', 'worst one', 'lowest ranked', 'weakest stock', 'poorest performer',
+            'what not to buy', 'what to avoid', 'what to sell', 'what should i sell',
+            'what is worst', 'bad performers', 'underperformers', 'worst choice'
+        ]
+        
+        # Risk/volatility questions
+        risk_keywords = [
+            'risk', 'risky', 'volatile', 'volatility', 'how risky', 'risk level', 'volatility level',
+            'price swings', 'unstable', 'stable', 'how volatile', 'risk assessment', 'volatility analysis'
+        ]
+        
+        # Drawdown/pullback questions
+        drawdown_keywords = [
+            'drawdown', 'pullback', 'near high', 'below high', 'peak', 'low', 'how much down',
+            'recovery', 'from high', 'peak to trough', 'decline', 'drop', 'fall', 'dip'
+        ]
+        
+        # Comparison questions
+        if any(keyword in prompt_lower for keyword in ['compare', 'vs', 'versus', 'compared to', 'versus', 'vs.']) and len(mentioned_stocks) >= 2:
             return build_comparison_response(mentioned_stocks)
 
-        if any(keyword in prompt_lower for keyword in ['which stock', 'what should i buy', 'purchase', 'buy', 'best stock', 'recommend']):
+        # Buy/recommendation questions
+        if any(keyword in prompt_lower for keyword in buy_keywords):
             return build_recommendation(snapshot)
 
-        if any(keyword in prompt_lower for keyword in ['worst stock', 'avoid', 'not purchase', 'should not buy', 'worst', 'bad stock', 'sell']):
+        # Avoid/worst questions
+        if any(keyword in prompt_lower for keyword in avoid_keywords):
             return build_avoid_recommendation(snapshot)
 
-        if any(keyword in prompt_lower for keyword in ['risk', 'risky', 'volatile', 'volatility']):
+        # Risk questions
+        if any(keyword in prompt_lower for keyword in risk_keywords):
             return build_risk_response(snapshot)
 
-        if any(keyword in prompt_lower for keyword in ['drawdown', 'pullback', 'near high', 'below high', 'peak']):
+        # Drawdown questions
+        if any(keyword in prompt_lower for keyword in drawdown_keywords):
             return build_drawdown_response(snapshot)
 
         if len(mentioned_stocks) == 1:
@@ -681,8 +736,31 @@ def answer_prompt(prompt, snapshot):
         if len(mentioned_stocks) > 1:
             return build_comparison_response(mentioned_stocks)
 
-        if any(keyword in prompt_lower for keyword in ['how many', 'how much', 'number of', 'total']):
-            return f"I currently have {len(snapshot['stocks'])} stocks loaded in the snapshot covering {snapshot.get('start_date')} through {snapshot.get('end_date')} ."
+        # Count/summary questions
+        count_keywords = [
+            'how many', 'how much', 'number of', 'total', 'count', 'how many stocks',
+            'what stocks', 'list of stocks', 'which stocks', 'what are the stocks',
+            'stock count', 'total stocks', 'how many do you have'
+        ]
+        if any(keyword in prompt_lower for keyword in count_keywords):
+            return f"I currently have {len(snapshot['stocks'])} stocks loaded in the snapshot covering {snapshot.get('start_date')} through {snapshot.get('end_date')}. The top performers are {', '.join([s['ticker'] for s in snapshot['stocks'][:3]])}."
+
+        # Performance/summary questions
+        performance_keywords = [
+            'performance', 'how are they doing', 'how did they do', 'summary', 'overview',
+            'how have they performed', 'results', 'what happened', 'how are the stocks doing'
+        ]
+        if any(keyword in prompt_lower for keyword in performance_keywords):
+            top = snapshot['stocks'][0]
+            return f"The stocks have shown mixed performance over the period. {top['ticker']} is the top performer with {format_percent(top['percent_change'])} return, while {snapshot['stocks'][-1]['ticker']} has the lowest return at {format_percent(snapshot['stocks'][-1]['percent_change'])}."
+
+        # Price/current value questions
+        price_keywords = [
+            'price', 'current price', 'how much', 'worth', 'value', 'current value',
+            'trading at', 'last price', 'current trading price'
+        ]
+        if any(keyword in prompt_lower for keyword in price_keywords) and len(mentioned_stocks) == 1:
+            return build_stock_response(mentioned_stocks[0], prompt, snapshot)
 
         return build_general_response(prompt, snapshot)
     except Exception as e:
