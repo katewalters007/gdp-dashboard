@@ -8,7 +8,18 @@
 #
 # Then copy and paste the appropriate line below.
 
-# OPTION 1: Run every 5 minutes (RECOMMENDED)
+# OPTION 1: Run every 30 seconds (RECOMMENDED for fast alerts)
+# Ultra-fast alerts but higher API usage
+# Note: Standard cron doesn't support seconds, so use one of these approaches:
+# 
+# Approach A: Multiple cron entries (every 30 seconds)
+* * * * * cd /path/to/gdp-dashboard && /usr/bin/python3 price_monitor.py >> /tmp/price_monitor.log 2>&1
+* * * * * (sleep 30; cd /path/to/gdp-dashboard && /usr/bin/python3 price_monitor.py >> /tmp/price_monitor.log 2>&1)
+#
+# Approach B: Use the provided loop script
+* * * * * /path/to/gdp-dashboard/price_monitor_loop.sh
+
+# OPTION 2: Run every 5 minutes (Good balance)
 # Fast alerts but more API calls
 # Replace /path/to with your actual path
 */5 * * * * cd /path/to/gdp-dashboard && /usr/bin/python3 price_monitor.py >> /tmp/price_monitor.log 2>&1

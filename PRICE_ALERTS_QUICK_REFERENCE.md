@@ -16,7 +16,7 @@ A complete external price alert monitoring system that sends email notifications
 **How to run:**
 ```bash
 python price_monitor.py          # One-time check
-*/5 * * * * python price_monitor.py  # Add to crontab
+*/30 * * * * python price_monitor.py  # Add to crontab (every 30 seconds)
 ```
 
 ### 2. `pages/Price_Alerts.py` (★ UI Page)

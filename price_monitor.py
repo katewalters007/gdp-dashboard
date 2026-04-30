@@ -8,12 +8,13 @@ This script monitors price alerts and sends email notifications when thresholds 
 Usage:
     python price_monitor.py              # Run once and exit
     # Or use with a system cron job:
-    # */5 * * * * /usr/bin/python3 /path/to/price_monitor.py
+    # */30 * * * * * /usr/bin/python3 /path/to/price_monitor.py (if cron supports seconds)
+    # Or use a loop for 30-second intervals
 
 Configuration:
     - Load SMTP settings from .streamlit/secrets.toml
     - Alerts stored in data/alerts.json
-    - Can be run periodically (every 5-15 minutes recommended)
+    - Can be run periodically (every 30 seconds recommended)
 """
 
 import json
@@ -32,7 +33,7 @@ except ImportError:
 BASE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE_DIR))
 
-from auth_utils import (
+from user_backend import (
     _load_alerts,
     _save_alerts,
     send_price_alert_email,
@@ -137,12 +138,12 @@ def check_and_send_alerts(smtp_config: dict) -> dict:
     ticker_alerts_map = {}
     
     for alert in alerts:
-        if alert.get("active") and not alert.get("triggered"):
-            ticker = alert.get("ticker")
-            tickers_to_check.add(ticker)
-            if ticker not in ticker_alerts_map:
-                ticker_alerts_map[ticker] = []
-            ticker_alerts_map[ticker].append(alert)
+        # Check both active alerts and triggered alerts (for resetting)
+        ticker = alert.get("ticker")
+        tickers_to_check.add(ticker)
+        if ticker not in ticker_alerts_map:
+            ticker_alerts_map[ticker] = []
+        ticker_alerts_map[ticker].append(alert)
     
     print(f"Checking {len(tickers_to_check)} unique tickers...")
     
@@ -161,34 +162,50 @@ def check_and_send_alerts(smtp_config: dict) -> dict:
             stats["processed"] += 1
             threshold = alert.get("price_threshold")
             alert_type = alert.get("alert_type")
-            email = alert.get("email")
+            user_email = alert.get("user_email")
+            is_active = alert.get("active", True)
+            was_triggered = alert.get("triggered", False)
             
-            # Check if alert should trigger
-            should_trigger = (
-                alert_type == "above" and current_price >= threshold
-            ) or (alert_type == "below" and current_price <= threshold)
-            
-            if should_trigger:
-                print(f"    TRIGGER: {ticker} {alert_type} ${threshold}")
+            if is_active and not was_triggered:
+                # Check if active alert should trigger
+                should_trigger = (
+                    alert_type == "above" and current_price >= threshold
+                ) or (alert_type == "below" and current_price <= threshold)
                 
-                try:
-                    sent, message = send_price_alert_email(
-                        email, ticker, current_price, threshold, alert_type, smtp_config
-                    )
+                if should_trigger:
+                    print(f"    TRIGGER: {ticker} {alert_type} ${threshold}")
                     
-                    if sent:
-                        alert["triggered"] = True
-                        alert["triggered_at"] = datetime.now(timezone.utc).isoformat()
-                        alert["triggered_price"] = current_price
-                        alert["active"] = False
-                        stats["triggered"] += 1
-                        print(f"      Email sent to {email}")
-                    else:
-                        print(f"      Failed to send email: {message}")
+                    try:
+                        sent = send_price_alert_email(alert, current_price)
+                        
+                        if sent:
+                            alert["triggered"] = True
+                            alert["triggered_at"] = datetime.now(timezone.utc).isoformat()
+                            alert["triggered_price"] = current_price
+                            alert["active"] = False  # Deactivate after triggering
+                            stats["triggered"] += 1
+                            print(f"      Email sent to {user_email}")
+                        else:
+                            print(f"      Failed to send email")
+                            stats["errors"] += 1
+                    except Exception as e:
+                        print(f"      Error sending email: {e}")
                         stats["errors"] += 1
-                except Exception as e:
-                    print(f"      Error sending email: {e}")
-                    stats["errors"] += 1
+            
+            elif was_triggered:
+                # Check if triggered alert should reset
+                should_reset = (
+                    (alert_type == "above" and current_price < threshold) or
+                    (alert_type == "below" and current_price > threshold)
+                )
+                
+                if should_reset:
+                    print(f"    RESET: {ticker} {alert_type} ${threshold} (price moved back)")
+                    alert["triggered"] = False
+                    alert["triggered_at"] = None
+                    alert["triggered_price"] = None
+                    alert["active"] = True  # Reactivate the alert
+                    print(f"      Alert reset and ready to trigger again")
     
     # Save updated alerts
     _save_alerts(alerts)

@@ -71,9 +71,14 @@ Edit your crontab:
 crontab -e
 ```
 
-Add this line to run every 5 minutes:
+Add this line to run every 30 seconds:
 ```bash
-*/5 * * * * cd /workspaces/gdp-dashboard && /usr/bin/python3 price_monitor.py >> /tmp/price_monitor.log 2>&1
+# Option 1: Multiple cron entries
+* * * * * cd /workspaces/gdp-dashboard && /usr/bin/python3 price_monitor.py >> /tmp/price_monitor.log 2>&1
+* * * * * (sleep 30; cd /workspaces/gdp-dashboard && /usr/bin/python3 price_monitor.py >> /tmp/price_monitor.log 2>&1)
+
+# Option 2: Use the provided loop script
+* * * * * /workspaces/gdp-dashboard/price_monitor_loop.sh
 ```
 
 View logs:
@@ -85,7 +90,7 @@ tail -f /tmp/price_monitor.log
 
 1. Open Task Scheduler
 2. Create Basic Task → Name it "Stock Tracker Price Monitor"
-3. Trigger: Repeat every 5 minutes
+3. Trigger: Repeat every 30 seconds
 4. Action: Run program
    - Program: `C:\Python39\python.exe` (or your Python path)
    - Arguments: `C:\path\to\price_monitor.py`
@@ -96,7 +101,7 @@ tail -f /tmp/price_monitor.log
 **Google Cloud Scheduler:**
 ```bash
 gcloud scheduler jobs create app-engine price-monitor \
-  --schedule="*/5 * * * *" \
+  --schedule="*/30 * * * *" \
   --http-method=POST \
   --uri="https://your-app.cloudfunctions.net/price_monitor" \
   --tz=America/New_York

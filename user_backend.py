@@ -1,11 +1,16 @@
 import hashlib
 import hmac
+import json
 import os
+import smtplib
 import sqlite3
 from datetime import datetime
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 
 DB_PATH = "data/app.db"
+ALERTS_PATH = "data/alerts.json"
 
 
 def _get_connection(db_path=DB_PATH):
@@ -412,3 +417,215 @@ def delete_user_strategy(strategy_id, user_id, db_path=DB_PATH):
         )
         conn.commit()
     return cursor.rowcount > 0
+
+
+# Price Alert Functions
+
+def _load_alerts():
+    """Load alerts from JSON file"""
+    if not os.path.exists(ALERTS_PATH):
+        return []
+    try:
+        with open(ALERTS_PATH, 'r') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, FileNotFoundError):
+        return []
+
+
+def _save_alerts(alerts):
+    """Save alerts to JSON file"""
+    os.makedirs(os.path.dirname(ALERTS_PATH), exist_ok=True)
+    with open(ALERTS_PATH, 'w') as f:
+        json.dump(alerts, f, indent=2)
+
+
+def get_user_alerts(user_email):
+    """Get all alerts for a user"""
+    alerts = _load_alerts()
+    return [alert for alert in alerts if alert.get('user_email') == user_email]
+
+
+def create_price_alert(user_email, ticker, alert_type, price_threshold):
+    """Create a new price alert"""
+    try:
+        alerts = _load_alerts()
+        
+        # Generate new ID
+        max_id = max((alert.get('id', 0) for alert in alerts), default=0)
+        new_id = max_id + 1
+        
+        alert = {
+            'id': new_id,
+            'user_email': user_email,
+            'ticker': ticker.upper(),
+            'alert_type': alert_type,
+            'price_threshold': float(price_threshold),
+            'created_at': datetime.utcnow().isoformat(),
+            'active': True,
+            'triggered': False,
+            'triggered_price': None,
+            'triggered_at': None
+        }
+        
+        alerts.append(alert)
+        _save_alerts(alerts)
+        
+        return True, f"Alert created for {ticker} when price goes {alert_type} ${price_threshold:.2f}"
+    
+    except Exception as e:
+        return False, f"Failed to create alert: {str(e)}"
+
+
+def delete_price_alert(user_email, alert_idx):
+    """Delete a price alert by index in user's alert list"""
+    try:
+        alerts = _load_alerts()
+        user_alerts = [alert for alert in alerts if alert.get('user_email') == user_email]
+        
+        if 0 <= alert_idx < len(user_alerts):
+            alert_to_delete = user_alerts[alert_idx]
+            alerts.remove(alert_to_delete)
+            _save_alerts(alerts)
+            return True, "Alert deleted successfully"
+        else:
+            return False, "Alert not found"
+    
+    except Exception as e:
+        return False, f"Failed to delete alert: {str(e)}"
+
+
+def send_price_alert_email(alert, current_price):
+    """Send email notification for triggered alert"""
+    try:
+        # Load SMTP config from secrets
+        secrets_path = ".streamlit/secrets.toml"
+        if not os.path.exists(secrets_path):
+            print(f"SMTP config not found at {secrets_path}")
+            return False
+
+        # Simple TOML parser
+        config = {}
+        with open(secrets_path, 'r') as f:
+            current_section = None
+            for line in f:
+                line = line.strip()
+                if line.startswith('[') and line.endswith(']'):
+                    current_section = line[1:-1]
+                elif '=' in line and current_section == 'smtp':
+                    key, value = line.split('=', 1)
+                    key = key.strip()
+                    value = value.strip().strip('"')
+                    config[key] = value
+
+        if not all(k in config for k in ['host', 'port', 'username', 'password', 'from_address']):
+            print("Incomplete SMTP configuration")
+            return False
+
+        # Create HTML email (less likely to go to spam)
+        msg = MIMEMultipart('alternative')
+        msg['From'] = config['from_address']
+        msg['To'] = alert['user_email']
+        msg['Subject'] = f"📈 {alert['ticker']} Alert: Price Target Reached!"
+
+        # Add headers to improve deliverability
+        msg['X-Priority'] = '1'  # High priority
+        msg['X-MSMail-Priority'] = 'High'
+        msg['Importance'] = 'High'
+        msg['Return-Path'] = config['username']
+        msg['Reply-To'] = config['from_address']
+
+        # HTML body (more professional and less spammy)
+        html_body = f"""
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }}
+                .container {{ max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+                .header {{ text-align: center; color: #2e7d32; border-bottom: 3px solid #4caf50; padding-bottom: 20px; margin-bottom: 30px; }}
+                .alert-box {{ background: #e8f5e8; border-left: 5px solid #4caf50; padding: 20px; margin: 20px 0; }}
+                .price-info {{ background: #fff3e0; padding: 15px; border-radius: 5px; margin: 20px 0; }}
+                .footer {{ text-align: center; color: #666; font-size: 12px; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px; }}
+                .highlight {{ font-weight: bold; color: #2e7d32; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>📊 Stock Price Alert</h1>
+                    <p>Your personalized stock monitoring service</p>
+                </div>
+
+                <div class="alert-box">
+                    <h2>🚨 Alert Triggered!</h2>
+                    <p><strong>{alert['ticker']}</strong> has reached your target price.</p>
+                </div>
+
+                <div class="price-info">
+                    <h3>Alert Details:</h3>
+                    <ul>
+                        <li><strong>Stock:</strong> {alert['ticker']}</li>
+                        <li><strong>Condition:</strong> Price went <span class="highlight">{alert['alert_type']}</span> ${alert['price_threshold']:.2f}</li>
+                        <li><strong>Current Price:</strong> <span class="highlight">${current_price:.2f}</span></li>
+                        <li><strong>Triggered:</strong> {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}</li>
+                    </ul>
+                </div>
+
+                <div class="alert-box" style="background: #e3f2fd; border-left-color: #2196f3;">
+                    <h3>🔄 Reusable Alert</h3>
+                    <p>This alert will <strong>automatically reset</strong> when {alert['ticker']} moves back {alert['alert_type']} ${alert['price_threshold']:.2f} and can trigger again.</p>
+                    <p><em>Example: If you set "AAPL above $100", it will notify you each time AAPL crosses above $100.</em></p>
+                </div>
+
+                <p>This alert has been marked as triggered and will no longer send notifications until it resets.</p>
+
+                <div class="footer">
+                    <p><strong>Stock Tracker</strong> - Your Personal Stock Monitoring Assistant</p>
+                    <p>To manage your alerts, visit the Price Alerts page in your dashboard.</p>
+                    <p>If you no longer wish to receive these alerts, you can delete them from your account.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        # Plain text fallback
+        text_body = f"""Stock Price Alert - {alert['ticker']}
+
+ALERT TRIGGERED!
+
+Stock: {alert['ticker']}
+Condition: Price went {alert['alert_type']} ${alert['price_threshold']:.2f}
+Current Price: ${current_price:.2f}
+Triggered: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
+
+REUSABLE ALERT:
+This alert will automatically reset when {alert['ticker']} moves back {alert['alert_type']} ${alert['price_threshold']:.2f}
+and can trigger again. For example, if you set "AAPL above $100", it will notify you each time AAPL crosses above $100.
+
+This alert has been marked as triggered and will no longer send notifications until it resets.
+
+---
+Stock Tracker - Your Personal Stock Monitoring Assistant
+To manage your alerts, visit the Price Alerts page in your dashboard.
+"""
+
+        # Attach both HTML and plain text versions
+        msg.attach(MIMEText(text_body, 'plain'))
+        msg.attach(MIMEText(html_body, 'html'))
+
+        # Send email
+        server = smtplib.SMTP(config['host'], int(config['port']))
+        if config.get('use_ssl', 'false').lower() == 'true':
+            server.starttls()
+        else:
+            server.starttls()  # Most SMTP requires TLS
+
+        server.login(config['username'], config['password'])
+        server.send_message(msg)
+        server.quit()
+
+        return True
+
+    except Exception as e:
+        print(f"Failed to send email: {str(e)}")
+        return False

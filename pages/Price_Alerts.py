@@ -1,6 +1,6 @@
 import streamlit as st
 
-from auth_utils import (
+from user_backend import (
     create_price_alert,
     delete_price_alert,
     get_user_alerts,
@@ -165,15 +165,15 @@ st.markdown("""
 st.title("🔔 Price Alerts")
 st.markdown(
     "Set up email notifications when your favorite stocks reach specific price points. "
-    "Alerts are checked every 5-10 minutes and you'll receive an email when triggered."
+    "Alerts are checked every 30 seconds and will notify you each time the price crosses your threshold."
 )
 
 # Check if user is logged in (you'll need to integrate with your Login page session state)
-if "user_email" not in st.session_state:
+if "auth_user" not in st.session_state or not st.session_state.auth_user:
     st.warning("Please log in to manage price alerts. Visit the Login page first.")
     st.stop()
 
-user_email = st.session_state.user_email
+user_email = st.session_state.auth_user['email']
 
 # Create new alert
 with st.container(border=True):
@@ -284,7 +284,7 @@ with st.expander("📋 Setup Instructions"):
     
     1. **Create an Alert**: Set a stock ticker, price threshold, and alert direction (above/below)
     2. **Receive Email**: When the price condition is met, you'll receive an email notification
-    3. **Alert Status**: Alerts are checked every 5-10 minutes and marked as triggered once they're sent
+    3. **Alert Status**: Alerts are checked every 30 seconds and will notify you each time the price crosses your threshold (above/below)
     
     ### Setting Up the Price Monitor
     
@@ -297,15 +297,20 @@ with st.expander("📋 Setup Instructions"):
     
     **Option 2: Scheduled (Cron) - Linux/Mac**
     ```bash
-    # Run every 5 minutes
-    */5 * * * * /usr/bin/python3 /path/to/price_monitor.py
+    # Run every 30 seconds (recommended)
+    # Option 1: Multiple cron entries
+    * * * * * /usr/bin/python3 /path/to/price_monitor.py
+    * * * * * (sleep 30; /usr/bin/python3 /path/to/price_monitor.py)
+    
+    # Option 2: Use the provided loop script
+    * * * * * /path/to/price_monitor_loop.sh
     
     # Add to crontab:
     crontab -e
     ```
     
     **Option 3: Scheduled (Task Scheduler) - Windows**
-    - Create a scheduled task that runs `python price_monitor.py` every 5-10 minutes
+    - Create a scheduled task that runs `python price_monitor.py` every 30 seconds
     
     **Option 4: Cloud Scheduler**
     - Google Cloud Scheduler
