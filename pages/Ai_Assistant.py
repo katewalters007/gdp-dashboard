@@ -449,6 +449,35 @@ def build_recommendation(snapshot):
         return f"Unable to build recommendation: {str(e)}"
 
 
+def build_avoid_recommendation(snapshot):
+    """Build a recommendation for the worst stock to avoid from the snapshot."""
+    if not snapshot or not snapshot.get('stocks'):
+        return 'I do not have valid stock data yet. Run the advisor to load historical prices first.'
+
+    try:
+        stocks = snapshot['stocks']
+        worst_stock = stocks[-1]  # Last in the list is the worst
+        second_worst = stocks[-2] if len(stocks) > 1 else None
+        
+        response = [
+            f"Based on the selected historical window, {worst_stock['ticker']} is the weakest performer from this list and should be avoided.",
+            describe_stock(worst_stock),
+        ]
+
+        if second_worst:
+            score_gap = second_worst['score'] - worst_stock['score']
+            response.append(
+                f"It ranks below {second_worst['ticker']} by {score_gap:.2f} points due to weaker momentum and poorer risk-adjusted performance in this time window."
+            )
+
+        response.append(
+            "This assistant is educational only. It ranks the displayed stocks from recent price behavior, not full valuation, earnings quality, or macro risk."
+        )
+        return "\n\n".join(response)
+    except Exception as e:
+        return f"Unable to build avoid recommendation: {str(e)}"
+
+
 def build_comparison_response(stocks):
     """Compare multiple stocks mentioned in the prompt."""
     try:
@@ -636,6 +665,9 @@ def answer_prompt(prompt, snapshot):
 
         if any(keyword in prompt_lower for keyword in ['which stock', 'what should i buy', 'purchase', 'buy', 'best stock', 'recommend']):
             return build_recommendation(snapshot)
+
+        if any(keyword in prompt_lower for keyword in ['worst stock', 'avoid', 'not purchase', 'should not buy', 'worst', 'bad stock', 'sell']):
+            return build_avoid_recommendation(snapshot)
 
         if any(keyword in prompt_lower for keyword in ['risk', 'risky', 'volatile', 'volatility']):
             return build_risk_response(snapshot)
