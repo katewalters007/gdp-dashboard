@@ -538,13 +538,17 @@ def build_general_response(prompt, snapshot):
     if len(stocks) > 8:
         tickers += ', ...'
 
-    return (
-        f"I am answering from the historical snapshot loaded for {len(stocks)} tickers from {snapshot.get('start_date')} to {snapshot.get('end_date')}. "
-        f"The top-ranked name is {top['ticker']} with a score of {top['score']:.2f}, return {format_percent(top['percent_change'])}, and volatility {format_percent(top['volatility_pct'])}. "
-        f"The lowest-ranked name is {bottom['ticker']} with return {format_percent(bottom['percent_change'])}. "
-        f"Currently analyzed tickers include: {tickers}. "
-        "Ask about a specific ticker, comparison, volatility, drawdown, or overall ranking."
-    )
+    # Add some variety to responses to avoid repetition
+    response_variations = [
+        f"I am answering from the historical snapshot loaded for {len(stocks)} tickers from {snapshot.get('start_date')} to {snapshot.get('end_date')}. The top-ranked name is {top['ticker']} with a score of {top['score']:.2f}, return {format_percent(top['percent_change'])}, and volatility {format_percent(top['volatility_pct'])}. The lowest-ranked name is {bottom['ticker']} with return {format_percent(bottom['percent_change'])}. Currently analyzed tickers include: {tickers}. Ask about a specific ticker, comparison, volatility, drawdown, or overall ranking.",
+        f"Based on the loaded analysis covering {len(stocks)} stocks from {snapshot.get('start_date')} to {snapshot.get('end_date')}, {top['ticker']} leads with a {top['score']:.2f} score and {format_percent(top['percent_change'])} return. At the bottom is {bottom['ticker']} with {format_percent(bottom['percent_change'])} performance. The full list includes: {tickers}. Try asking about specific stocks or comparisons.",
+        f"From the {len(stocks)} stocks analyzed between {snapshot.get('start_date')} and {snapshot.get('end_date')}, {top['ticker']} ranks highest with {format_percent(top['percent_change'])} return and {format_percent(top['volatility_pct'])} volatility. {bottom['ticker']} shows the lowest return at {format_percent(bottom['percent_change'])}. Available stocks: {tickers}. What would you like to know about these stocks?"
+    ]
+    
+    # Use a simple hash of the prompt to select different response variations
+    import hashlib
+    variation_index = int(hashlib.md5(prompt.encode()).hexdigest(), 16) % len(response_variations)
+    return response_variations[variation_index]
 
 
 def build_stock_response(stock, prompt, snapshot):
@@ -656,7 +660,7 @@ snapshot = get_snapshot()
 
 def build_watchlist_input(selection):
     if selection == 'Custom':
-        default_tickers = st.session_state.get('advisor_custom_tickers', ['AAPL', 'MSFT', 'NVDA', 'GOOGL'])
+        default_tickers = st.session_state.get('advisor_custom_tickers', ['AAPL', 'MSFT', 'NVDA', 'TSLA'])
     else:
         default_tickers = DEFAULT_STOCK_UNIVERSES[selection]
     return ', '.join(default_tickers)
@@ -737,7 +741,7 @@ with st.container(border=True):
         tickers_value = st.text_input(
             'Tickers to rank',
             value=build_watchlist_input(watchlist_choice),
-            placeholder='e.g., AAPL, MSFT, NVDA, GOOGL',
+            placeholder='e.g., AAPL, MSFT, NVDA, TSLA',
         )
         st.session_state.advisor_custom_tickers = normalize_tickers(tickers_value)
 
@@ -752,6 +756,12 @@ with st.container(border=True):
         end_date = st.date_input('End date', value=end_date, min_value=start_date, max_value=datetime.now().date(), key='advisor_end_date')
         top_pick_count = st.slider('How many buy ideas to show', min_value=1, max_value=5, value=3)
         analyze_clicked = st.button('Run advisor', width='stretch')
+        if st.button('Clear Analysis Cache', width='stretch', help='Clear cached results and force fresh analysis'):
+            st.session_state.pop('advisor_snapshot', None)
+            st.session_state.pop('analysis_snapshot', None)
+            st.session_state.pop('offline_ai_messages', None)
+            st.success('Cache cleared! Run the advisor again for fresh analysis.')
+            st.rerun()
 
 if analyze_clicked or not snapshot['stocks']:
     advisor_tickers = normalize_tickers(tickers_value)
@@ -760,6 +770,7 @@ if analyze_clicked or not snapshot['stocks']:
     snapshot['history'] = ticker_data
     st.session_state.advisor_snapshot = snapshot
     st.session_state.analysis_snapshot = snapshot
+    # Clear any existing AI messages to force fresh responses
     st.session_state.offline_ai_messages = [
         {'role': 'assistant', 'content': build_recommendation(snapshot)}
         if snapshot['stocks']
@@ -801,7 +812,19 @@ with quick_col3:
 
 st.subheader('Current Ranking')
 if snapshot['stocks']:
+    # Show debug info about loaded stocks
+    with st.expander("📊 Analysis Details (Click to expand)", expanded=False):
+        st.write(f"**Analysis Period:** {snapshot.get('start_date')} to {snapshot.get('end_date')}")
+        st.write(f"**Stocks Loaded:** {len(snapshot['stocks'])}")
+        st.write(f"**Top Performer:** {snapshot['stocks'][0]['ticker']} (Score: {snapshot['stocks'][0]['score']:.2f})")
+        
+        # Show score distribution
+        scores = [stock['score'] for stock in snapshot['stocks']]
+        st.write(f"**Score Range:** {min(scores):.2f} to {max(scores):.2f}")
+    
     st.dataframe(build_rank_table(snapshot), width='stretch')
+else:
+    st.info('No stocks loaded yet. Select a universe or enter custom tickers above, then click "Run advisor".')
 
 st.subheader('Top Ideas')
 if snapshot['stocks']:

@@ -6,13 +6,14 @@ import yfinance as yf
 
 
 DEFAULT_STOCK_UNIVERSES = {
-    'Magnificent 7': ['AAPL', 'AMZN', 'GOOGL', 'META', 'MSFT', 'NVDA', 'TSLA'],
-    'AI and Chips': ['AMD', 'AVGO', 'GOOGL', 'META', 'MSFT', 'MU', 'NVDA', 'TSM'],
+    'Tech Leaders': ['AAPL', 'MSFT', 'NVDA', 'AMD', 'CRM', 'NOW', 'INTC'],
+    'AI and Chips': ['AMD', 'AVGO', 'MU', 'NVDA', 'TSM', 'QCOM', 'TXN'],
     'Broad ETFs': ['DIA', 'IVV', 'QQQ', 'SPY', 'VGT', 'VTI'],
     'Dividend Leaders': ['ABBV', 'COST', 'JNJ', 'KO', 'PG', 'PEP', 'WMT', 'XOM'],
+    'Growth Stocks': ['TSLA', 'AMZN', 'NFLX', 'META', 'GOOGL', 'UBER', 'LYFT'],
 }
 
-DEFAULT_SUGGESTED_UNIVERSE = ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'GOOGL', 'AMZN', 'NFLX', 'SPY', 'QQQ']
+DEFAULT_SUGGESTED_UNIVERSE = ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'AMD', 'CRM', 'SPY', 'QQQ', 'VGT']
 
 
 def normalize_tickers(raw_value):
